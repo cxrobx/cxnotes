@@ -1,0 +1,103 @@
+{
+  "name": "cxnotes",
+  "version": "1.0.0",
+  "description": "Privacy-focused dual-track meeting recorder with AI transcription and speaker-aware summarisation",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build:sck": "cd native/sck-audio-capture && swift build -c release && codesign -f -s - --identifier com.christopherrobinson.sck-audio-capture .build/release/sck-audio-capture",
+    "build:calendar": "cd native/calendar-helper && swift build -c release -Xlinker -sectcreate -Xlinker __TEXT -Xlinker __info_plist -Xlinker \"$PWD/Info.plist\" && codesign -f -s - --entitlements CalendarHelper.entitlements --identifier com.christopherrobinson.calendar-helper .build/release/calendar-helper",
+    "build:native": "npm run build:sck && npm run build:slides && npm run build:call && npm run build:calendar",
+    "prebuild": "npm run build:native",
+    "build": "electron-builder",
+    "postinstall": "electron-builder install-app-deps",
+    "summaryonly": "node summarise-only.js",
+    "mcp": "node mcp/server.js",
+    "mcp:check": "node mcp/check.js",
+    "lint:british": "node scripts/check-british-english.js",
+    "pretest": "node scripts/check-british-english.js",
+    "test": "node --test '**/*.test.js'",
+    "test:watch": "node --test --watch '**/*.test.js'",
+    "build:slides": "cd native/sck-slide-capture && swift build -c release && codesign -f -s - --identifier com.christopherrobinson.sck-slide-capture .build/release/sck-slide-capture",
+    "build:call": "cd native/call-audio-tap && swift build -c release && codesign -f -s - --identifier com.christopherrobinson.call-audio-tap .build/release/call-audio-tap"
+  },
+  "keywords": [
+    "meeting",
+    "recorder",
+    "transcription",
+    "ai",
+    "privacy",
+    "notes",
+    "summarisation",
+    "dual-track",
+    "speaker-separation"
+  ],
+  "author": "CX Ventures LLC",
+  "license": "BUSL-1.1",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "electron-store": "^8.2.0"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.christopherrobinson.cxnotes",
+    "productName": "CXNotes",
+    "publish": null,
+    "mac": {
+      "category": "public.app-category.productivity",
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "icon": "assets/icon.png",
+      "hardenedRuntime": true,
+      "minimumSystemVersion": "13.0",
+      "entitlements": "entitlements.mac.plist",
+      "extendInfo": {
+        "LSUIElement": true,
+        "NSMicrophoneUsageDescription": "CXNotes needs microphone access to record your voice during meetings.",
+        "NSScreenCaptureUsageDescription": "CXNotes needs Screen Recording permission to capture system audio during meetings.",
+        "NSAudioCaptureUsageDescription": "CXNotes records the other side of phone and FaceTime calls, which macOS plays itself. It listens only while a call is playing.",
+        "NSCalendarsUsageDescription": "CXNotes reads your calendar to suggest note-taking before meetings start and enrich the in-meeting banner with title, attendees, and agenda.",
+        "NSCalendarsFullAccessUsageDescription": "CXNotes reads your calendar to suggest note-taking before meetings start and enrich the in-meeting banner with title, attendees, and agenda."
+      }
+    },
+    "extraResources": [
+      {
+        "from": "native/sck-audio-capture/.build/release/sck-audio-capture",
+        "to": "sck-audio-capture"
+      },
+      {
+        "from": "native/sck-slide-capture/.build/release/sck-slide-capture",
+        "to": "sck-slide-capture"
+      },
+      {
+        "from": "native/call-audio-tap/.build/release/call-audio-tap",
+        "to": "call-audio-tap"
+      },
+      {
+        "from": "native/calendar-helper/.build/release/calendar-helper",
+        "to": "calendar-helper"
+      },
+      {
+        "from": "setup-packaged.sh",
+        "to": "setup-packaged.sh"
+      }
+    ],
+    "files": [
+      "**/*",
+      "!**/*.md",
+      "!**/*.test.js",
+      "!.gitignore",
+      "!_devnotes",
+      "!whisper.cpp",
+      "!native",
+      "!.claude",
+      "!.playwright-mcp",
+      "!mocks"
+    ]
+  }
+}

@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline';">
+  <title>Meeting detected</title>
+  <style>
+    /* ── glass ──────────────────────────────────────────────
+       This window sits on a native NSVisualEffectView (main.js GLASS.popover),
+       so the desktop behind it is really blurred; these alphas are the tint
+       half of that pair and are stamped onto <html> as an inline style by
+       main's applyGlass. The fallbacks are OPAQUE because the first paint can
+       precede the push, and a prompt that flashes solid beats one that flashes
+       as floating text on bare blur.
+
+       SPACE-separated triplets, never comma-separated: consumed as
+       `rgb(var(--x) / var(--alpha-y))`, a comma list expands to the invalid
+       `rgb(28, 26, 23 / 0.7)`, and an invalid background paints NOTHING rather
+       than falling back — which looks like very good glass instead of a bug. */
+    :root {
+      --alpha-pane: 1;
+      --alpha-chrome: 1;
+      --alpha-card: 1;
+      --surface-pane: 28 26 23;
+      --surface-card: 20 19 17;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      background: transparent;
+      font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif;
+      -webkit-user-select: none;
+      user-select: none;
+      overflow: hidden;
+    }
+
+    /* The WINDOW is the card now — macOS rounds it, shadows it, and clips the
+       vibrancy material to those corners. The old 6px margin made room for the
+       CSS shadow; kept, it would frame the card in a rectangular blurred slab,
+       since the material fills the window's whole rect. The radius matches the
+       window's own rounding, so a larger one here would just get cut square at
+       the corners. */
+    .banner {
+      position: relative;
+      margin: 0;
+      height: 100%;
+      /* The THIN layer, same call as the menu-bar panel's field: these are
+         small surfaces floating over someone's screen mid-meeting, so they
+         should read as a pane of glass laid on the desktop rather than as a
+         solid card that happens to have a blurred edge. The content alpha
+         belongs to windows you sit and work in. */
+      background: rgb(var(--surface-pane) / var(--alpha-chrome));
+      border-radius: 11px;
+      overflow: hidden;
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+      display: flex;
+      align-items: center;
+      padding: 0 16px 0 56px;
+      -webkit-app-region: drag;
+    }
+
+    .accent {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 4px;
+      background: linear-gradient(90deg, #1e5bff 0%, #3f7dff 100%);
+    }
+
+    .close {
+      position: absolute;
+      top: 8px;
+      left: 8px;
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.08);
+      border: none;
+      color: rgba(255, 255, 255, 0.7);
+      cursor: pointer;
+      font-size: 12px;
+      line-height: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.15s;
+      -webkit-app-region: no-drag;
+    }
+    .close:hover { background: rgba(255, 255, 255, 0.15); }
+
+    .icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 10px;
+      background: #2e7cff;
+      margin-right: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+      font-weight: 700;
+      color: white;
+      flex-shrink: 0;
+    }
+    .icon[data-app="zoom"] { background: #2d8cff; }
+    .icon[data-app="facetime"] { background: #30d158; }
+    .icon[data-app="meet"] { background: #ffffff; color: #1e8e3e; }
+
+    .text {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .title {
+      font-size: 13px;
+      font-weight: 600;
+      color: rgba(255, 255, 255, 0.95);
+      letter-spacing: -0.1px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .subtitle {
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.72);
+      margin-top: 1px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .actions {
+      display: flex;
+      align-items: center;
+      gap: 1px;
+      flex-shrink: 0;
+      margin-left: 12px;
+    }
+
+    .take-notes {
+      background: white;
+      color: black;
+      border: none;
+      padding: 7px 16px;
+      border-radius: 16px 0 0 16px;
+      font-size: 13px;
+      font-weight: 600;
+      font-family: inherit;
+      cursor: pointer;
+      transition: opacity 0.15s;
+      -webkit-app-region: no-drag;
+    }
+    .take-notes:hover { opacity: 0.85; }
+    .take-notes:active { opacity: 0.7; }
+
+    .chevron {
+      background: white;
+      color: black;
+      border: none;
+      padding: 7px 10px;
+      border-radius: 0 16px 16px 0;
+      font-size: 10px;
+      font-family: inherit;
+      cursor: default;
+      opacity: 0.6;
+      -webkit-app-region: no-drag;
+    }
+  </style>
+</head>
+<body>
+  <div class="banner">
+    <div class="accent"></div>
+    <button class="close" id="btn-close" title="Dismiss">✕</button>
+    <div class="icon" id="app-icon" data-app="">📹</div>
+    <div class="text">
+      <div class="title" id="banner-title">Note-taking is available</div>
+      <div class="subtitle" id="app-name">Meeting</div>
+    </div>
+    <div class="actions">
+      <button class="take-notes" id="btn-take-notes">Take notes</button>
+      <button class="chevron">▾</button>
+    </div>
+  </div>
+
+  <script>
+    const iconGlyphs = {
+      zoom: 'Z',
+      facetime: '📞',
+      meet: 'M',
+      calendar: '📅'
+    };
+
+    function truncate(s, n) {
+      if (!s) return '';
+      return s.length > n ? s.slice(0, n - 1) + '…' : s;
+    }
+
+    function buildCalendarSubtitle(ev) {
+      const title = ev.title || 'Meeting';
+      const attendeeCount = Array.isArray(ev.attendees) ? ev.attendees.length : 0;
+      const suffix = attendeeCount ? ` • ${attendeeCount} attendees` : '';
+      return truncate(title + suffix, 80);
+    }
+
+    // 'confirm' mode is the zero-touch path: a calendar event is present and the
+    // user opted into auto-templating. The primary button becomes "Record" and
+    // starts recording immediately with the templated context. Otherwise we keep
+    // today's "Take notes" → pre-record popup flow untouched.
+    let bannerMode = 'suggest';
+
+    (async () => {
+      try {
+        const ctx = await window.meetingBanner.getContext();
+        if (ctx) {
+          const appIcon = document.getElementById('app-icon');
+          const appName = document.getElementById('app-name');
+          const bannerTitle = document.getElementById('banner-title');
+          const primaryBtn = document.getElementById('btn-take-notes');
+          appIcon.dataset.app = ctx.app || '';
+          appIcon.textContent = iconGlyphs[ctx.app] || '📹';
+          bannerMode = ctx.bannerMode === 'confirm' ? 'confirm' : 'suggest';
+
+          if (ctx.calendarEvent) {
+            const title = ctx.calendarEvent.title || 'this meeting';
+            if (bannerMode === 'confirm') {
+              // Zero-touch: one click records, nothing is typed.
+              bannerTitle.textContent = `Record “${truncate(title, 48)}”?`;
+              appName.textContent = buildCalendarSubtitle(ctx.calendarEvent);
+              primaryBtn.textContent = 'Record';
+            } else {
+              // Enriched suggestion: show calendar title + attendee count.
+              bannerTitle.textContent = 'Take notes for this meeting';
+              appName.textContent = buildCalendarSubtitle(ctx.calendarEvent);
+            }
+          } else {
+            appName.textContent = ctx.displayName || 'Meeting';
+          }
+        }
+      } catch (err) {
+        // Leave defaults
+      }
+    })();
+
+    document.getElementById('btn-close').addEventListener('click', () => {
+      window.meetingBanner.dismiss();
+    });
+
+    document.getElementById('btn-take-notes').addEventListener('click', () => {
+      if (bannerMode === 'confirm') {
+        window.meetingBanner.confirmRecord();
+      } else {
+        window.meetingBanner.takeNotes();
+      }
+    });
+  </script>
+</body>
+</html>

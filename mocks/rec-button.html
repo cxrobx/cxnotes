@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<title>CXNotes — record button explorations</title>
+<style>
+  /* ══════════════════════════════════════════════════════════════════════
+     Mock exploration page — data is static.
+
+     Three treatments of the menu-bar panel's start button, built from the
+     REC viewfinder reference: corner brackets + red dot + REC wordmark,
+     rendered as glass rather than the reference's flat white card.
+
+     ⚠️ One honest caveat about fidelity. In the real app the popover's
+     translucency comes from a native NSVisualEffectView behind the window
+     (invariant #18) — `backdrop-filter` cannot see past a window and is
+     never the answer there. In THIS page the backdrop root IS the page, so
+     backdrop-filter genuinely works and is a fair stand-in. Whichever
+     variant you pick gets re-verified in the Electron harness against real
+     vibrancy before it ships.
+     ══════════════════════════════════════════════════════════════════════ */
+
+  :root {
+    /* Lifted verbatim from renderer/menubar-panel.html */
+    --surface-pane: 30 28 25;
+    --surface-chrome: 46 43 38;
+    --surface-card: 26 24 21;
+
+    /* Real output of glass.js transparencyToAlphas(0.38), the shipped default */
+    --alpha-pane: 0.734;
+    --alpha-chrome: 0.365;
+    --alpha-card: 0.867;
+
+    --text-primary: rgb(255, 255, 255);
+    --text-secondary: rgb(222, 220, 217);
+    --text-muted: rgb(182, 179, 175);
+    --text-subtle: rgb(150, 147, 143);
+
+    --border: rgba(255, 255, 255, 0.12);
+    --border-subtle: rgba(255, 255, 255, 0.08);
+
+    --success: rgb(143, 179, 136);
+    --accent: rgb(10, 132, 255);
+    --record: rgb(229, 72, 77);
+    --record-hover: rgb(206, 58, 63);
+
+    --mono: "SF Mono", ui-monospace, Menlo, monospace;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+    -webkit-font-smoothing: antialiased;
+    min-height: 100vh;
+    /* A busy, bright wallpaper on purpose: glass that only looks good over a
+       flat colour is not glass, and a pane painting NOTHING at all (gotcha
+       #13) reads as flattering blur until you put detail behind it. */
+    background:
+      radial-gradient(1100px 700px at 12% 18%, #ffb347 0%, transparent 55%),
+      radial-gradient(900px 900px at 82% 12%, #ff5f6d 0%, transparent 55%),
+      radial-gradient(1000px 800px at 70% 88%, #7b4397 0%, transparent 60%),
+      radial-gradient(1200px 900px at 25% 92%, #1f9be0 0%, transparent 60%),
+      #0d1b2a;
+    background-attachment: fixed;
+    padding: 34px 24px 60px;
+    color: var(--text-primary);
+  }
+
+  /* ── page chrome ── */
+  .lede { max-width: 1180px; margin: 0 auto 22px; }
+  .lede h1 { font-size: 19px; font-weight: 600; letter-spacing: -0.01em; }
+  .lede p {
+    margin-top: 6px; font-size: 13px; line-height: 1.5;
+    color: rgba(255, 255, 255, 0.72); max-width: 62ch;
+  }
+
+  .switcher {
+    max-width: 1180px; margin: 0 auto 26px;
+    display: flex; gap: 8px; flex-wrap: wrap; align-items: center;
+  }
+  .switcher button {
+    appearance: none; font: inherit; cursor: pointer;
+    font-size: 12.5px; font-weight: 600;
+    padding: 8px 16px; border-radius: 9px;
+    border: 1px solid rgba(255, 255, 255, 0.22);
+    background: rgba(0, 0, 0, 0.34);
+    backdrop-filter: blur(14px);
+    color: rgba(255, 255, 255, 0.82);
+    transition: all 140ms ease;
+  }
+  .switcher button:hover { background: rgba(0, 0, 0, 0.5); color: #fff; }
+  .switcher button[aria-pressed="true"] {
+    background: #fff; color: #16130f; border-color: #fff;
+  }
+  .switcher .hint {
+    margin-left: 6px; font-size: 11.5px; color: rgba(255, 255, 255, 0.6);
+  }
+
+  .stage {
+    max-width: 1180px; margin: 0 auto;
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+    gap: 30px; align-items: start;
+  }
+  .stage.single { grid-template-columns: minmax(340px, 403px); justify-content: center; }
+  .slot { display: flex; flex-direction: column; gap: 12px; align-items: center; }
+  .slot > .caption {
+    font-size: 12px; line-height: 1.55; color: rgba(255, 255, 255, 0.76);
+    max-width: 403px;
+  }
+  .slot > .caption b { color: #fff; font-weight: 600; }
+
+  /* ══════════ the popover, replicated ══════════ */
+  .pop {
+    width: 403px;
+    position: relative;
+    border-radius: 11px;
+    overflow: hidden;
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1), 0 22px 60px rgba(0, 0, 0, 0.45);
+    /* Stand-in for the native material — see the caveat at the top. */
+    backdrop-filter: blur(34px) saturate(150%);
+    -webkit-backdrop-filter: blur(34px) saturate(150%);
+  }
+  .head {
+    display: flex; align-items: center; gap: 8px;
+    padding: 11px 14px 10px;
+    background: rgb(var(--surface-chrome) / var(--alpha-pane));
+    border-bottom: 1px solid var(--border-subtle);
+  }
+  .mark { width: 24px; height: 24px; flex-shrink: 0; }
+  .head b { font-size: 12.5px; font-weight: 600; }
+  .head .state {
+    margin-left: auto; display: flex; align-items: center; gap: 5px;
+    font-size: 11px; color: var(--text-muted);
+  }
+  .dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
+  .dot.ok { background: var(--success); }
+
+  .body {
+    padding: 12px 14px;
+    display: flex; flex-direction: column; gap: 12px;
+    background: rgb(var(--surface-pane) / var(--alpha-chrome));
+  }
+  .sec { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+  .eyebrow {
+    font-size: 10px; font-weight: 600;
+    letter-spacing: 0.1em; text-transform: uppercase;
+    color: var(--text-subtle);
+  }
+  .chip {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 1px 6px; border-radius: 4px;
+    font-family: var(--mono); font-size: 10px;
+    border: 1px solid var(--border);
+    background: rgb(var(--surface-card) / 0.55);
+    color: var(--text-muted);
+  }
+  .note { display: flex; gap: 9px; align-items: flex-start; padding: 7px 0; }
+  .note .dot { margin-top: 5px; background: var(--success); }
+  .note h4 { font-size: 12.5px; font-weight: 500; color: var(--text-secondary); }
+  .note small { display: block; font-size: 11px; color: var(--text-subtle); margin-top: 2px; }
+  .foot {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 12px 9px;
+    border-top: 1px solid var(--border-subtle);
+    background: rgb(var(--surface-chrome) / var(--alpha-pane));
+    font-size: 10.5px; color: var(--text-muted);
+  }
+
+  /* ══════════════════════════════════════════════════════════════════════
+     Shared record-button foundations
+     ══════════════════════════════════════════════════════════════════════ */
+  .rec-btn {
+    appearance: none; font: inherit; cursor: pointer;
+    position: relative;
+    width: 100%;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--text-primary);
+    border: 0;
+    background: transparent;
+    transition: background 160ms ease, box-shadow 160ms ease;
+  }
+
+  /* The four viewfinder brackets. Drawn as corner arms rather than a closed
+     border — the gap between them IS the camera-framing read, and closing it
+     turns the mark back into an ordinary outlined button. */
+  .br {
+    position: absolute;
+    width: var(--arm, 15px); height: var(--arm, 15px);
+    border: 0 solid var(--bracket, rgba(255, 255, 255, 0.4));
+    pointer-events: none;
+    transition: border-color 160ms ease, inset 220ms cubic-bezier(0.2, 0.9, 0.3, 1);
+  }
+  .br.tl { top: var(--inset, 8px); left: var(--inset, 8px);
+           border-top-width: 2px; border-left-width: 2px; border-top-left-radius: 5px; }
+  .br.tr { top: var(--inset, 8px); right: var(--inset, 8px);
+           border-top-width: 2px; border-right-width: 2px; border-top-right-radius: 5px; }
+  .br.bl { bottom: var(--inset, 8px); left: var(--inset, 8px);
+           border-bottom-width: 2px; border-left-width: 2px; border-bottom-left-radius: 5px; }
+  .br.br2 { bottom: var(--inset, 8px); right: var(--inset, 8px);
+            border-bottom-width: 2px; border-right-width: 2px; border-bottom-right-radius: 5px; }
+
+  .reddot {
+    border-radius: 50%;
+    background: var(--record);
+    flex-shrink: 0;
+    /* The glow is what keeps a saturated red legible once it is sitting on
+       glass rather than on a solid fill — without it the disc loses its edge
+       against a bright wallpaper. */
+    box-shadow: 0 0 0 0.5px rgba(255, 255, 255, 0.22), 0 0 12px rgba(229, 72, 77, 0.55);
+  }
+  .wordmark {
+    font-weight: 800; letter-spacing: 0.06em;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif;
+  }
+
+  /* ── A: framed ──────────────────────────────────────────────────────── */
+  .rec-a {
+    --inset: 7px; --arm: 14px;
+    gap: 10px;
+    padding: 15px 18px;
+    border-radius: 10px;
+    background:
+      linear-gradient(180deg, rgba(229, 72, 77, 0.16), rgba(229, 72, 77, 0.05)),
+      rgb(var(--surface-card) / 0.42);
+    box-shadow: inset 0 0 0 1px rgba(229, 72, 77, 0.26);
+    font-size: 13.5px; font-weight: 600;
+  }
+  .rec-a .reddot { width: 11px; height: 11px; }
+  .rec-a:hover {
+    background:
+      linear-gradient(180deg, rgba(229, 72, 77, 0.3), rgba(229, 72, 77, 0.12)),
+      rgb(var(--surface-card) / 0.5);
+    box-shadow: inset 0 0 0 1px rgba(229, 72, 77, 0.5);
+  }
+  .rec-a:hover .br { --bracket: var(--record); }
+  .rec-a:hover { --inset: 5px; }
+
+  /* ── B: badge ───────────────────────────────────────────────────────── */
+  .rec-b {
+    gap: 12px;
+    justify-content: flex-start;
+    padding: 11px 14px 11px 11px;
+    border-radius: 10px;
+    background: rgb(var(--surface-card) / 0.44);
+    box-shadow: inset 0 0 0 1px var(--border);
+    font-size: 13.5px; font-weight: 600;
+  }
+  .rec-b:hover {
+    background:
+      linear-gradient(90deg, rgba(229, 72, 77, 0.16), rgba(229, 72, 77, 0.03) 60%),
+      rgb(var(--surface-card) / 0.52);
+    box-shadow: inset 0 0 0 1px rgba(229, 72, 77, 0.4);
+  }
+  /* The badge keeps the reference's own proportions — brackets tight around a
+     dot-plus-REC lockup — so the mark survives being shrunk into a corner,
+     which is what a self-contained mark has to do. */
+  .badge {
+    position: relative;
+    --inset: 0px; --arm: 9px;
+    display: flex; align-items: center; gap: 7px;
+    padding: 7px 11px;
+    flex-shrink: 0;
+  }
+  .badge .reddot { width: 10px; height: 10px; }
+  .badge .wordmark { font-size: 13px; }
+  .rec-b:hover .badge .br { --bracket: var(--record); }
+  .rec-b .label { color: var(--text-secondary); font-weight: 500; }
+  .rec-b:hover .label { color: var(--text-primary); }
+
+  /* ── C: viewfinder ──────────────────────────────────────────────────── */
+  .rec-c {
+    /* Sized to sit level with A and B (~46px) rather than towering over them.
+       The arms shrink with it: an 18px arm on a 46px button is more than a
+       third of its height, and the brackets stop reading as corners. */
+    --inset: 5px; --arm: 13px;
+    flex-direction: column; gap: 2px;
+    padding: 8px 18px 9px;
+    border-radius: 12px;
+    /* Deliberately almost no fill at rest: the brackets and the dot ARE the
+       button, and the glass under them is the panel's own. */
+    background: rgb(var(--surface-card) / 0.2);
+  }
+  .rec-c .lockup { display: flex; align-items: center; gap: 9px; }
+  .rec-c .reddot { width: 12px; height: 12px; }
+  .rec-c .wordmark { font-size: 16px; line-height: 1; }
+  .rec-c .cap {
+    font-size: 9.5px; letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--text-subtle); font-weight: 600;
+  }
+  .rec-c:hover {
+    background:
+      radial-gradient(120% 140% at 50% 0%, rgba(229, 72, 77, 0.22), transparent 70%),
+      rgb(var(--surface-card) / 0.34);
+  }
+  .rec-c:hover .br { --bracket: var(--record); }
+  .rec-c:hover { --inset: 4px; }
+  .rec-c:hover .cap { color: var(--text-muted); }
+  .rec-c:hover .reddot { animation: breathe 1.5s ease-in-out infinite; }
+  @keyframes breathe {
+    0%, 100% { box-shadow: 0 0 0 0.5px rgba(255,255,255,0.22), 0 0 12px rgba(229,72,77,0.55); }
+    50%      { box-shadow: 0 0 0 0.5px rgba(255,255,255,0.3),  0 0 20px rgba(229,72,77,0.9); }
+  }
+
+  .hidden { display: none !important; }
+  .footnote {
+    max-width: 1180px; margin: 34px auto 0;
+    font-size: 11.5px; color: rgba(255, 255, 255, 0.55);
+  }
+</style>
+</head>
+<body>
+
+<div class="lede">
+  <h1>Record button — three glass readings of the REC viewfinder</h1>
+  <p>
+    Each is shown inside the real popover chrome, on real tokens, at the shipped
+    transparency (0.38). Hover any button — the brackets pull inward and go red,
+    which is the arming gesture the reference implies but cannot show.
+  </p>
+</div>
+
+<div class="switcher">
+  <button data-v="all" aria-pressed="true">All three</button>
+  <button data-v="a" aria-pressed="false">A · Framed</button>
+  <button data-v="b" aria-pressed="false">B · Badge</button>
+  <button data-v="c" aria-pressed="false">C · Viewfinder</button>
+  <span class="hint">Hover a button to see its armed state.</span>
+</div>
+
+<div class="stage" id="stage">
+
+  <!-- ══════════ A ══════════ -->
+  <div class="slot" data-slot="a">
+    <div class="pop">
+      <div class="head">
+        <img class="mark" src="../assets/icon.png" alt="">
+        <b>CXNotes</b>
+        <span class="state"><span class="dot ok"></span> Ready</span>
+      </div>
+      <div class="body">
+        <button class="rec-btn rec-a">
+          <span class="br tl"></span><span class="br tr"></span>
+          <span class="br bl"></span><span class="br br2"></span>
+          <span class="reddot"></span>
+          <span>Start recording</span>
+        </button>
+        <div class="sec"><span class="eyebrow">Recent notes</span><span class="chip">vault</span></div>
+        <div class="note"><span class="dot"></span><div><h4>NXT Training Academy Studio Review</h4>
+          <small>Projects/CXVentures/Clients/NXT/Meetings · Fri</small></div></div>
+        <div class="note"><span class="dot"></span><div><h4>Interview with Northwind | Alex Doe</h4>
+          <small>Meetings · Thu</small></div></div>
+      </div>
+      <div class="foot">Everything stays on this Mac</div>
+    </div>
+    <p class="caption"><b>A · Framed.</b> The brackets frame the button itself, so
+      the whole control becomes the viewfinder and the copy stays exactly as it
+      ships — including the “— system only” warning that has to remain readable.
+      Safest of the three: it is still obviously a button.</p>
+  </div>
+
+  <!-- ══════════ B ══════════ -->
+  <div class="slot" data-slot="b">
+    <div class="pop">
+      <div class="head">
+        <img class="mark" src="../assets/icon.png" alt="">
+        <b>CXNotes</b>
+        <span class="state"><span class="dot ok"></span> Ready</span>
+      </div>
+      <div class="body">
+        <button class="rec-btn rec-b">
+          <span class="badge">
+            <span class="br tl"></span><span class="br tr"></span>
+            <span class="br bl"></span><span class="br br2"></span>
+            <span class="reddot"></span>
+            <span class="wordmark">REC</span>
+          </span>
+          <span class="label">Start recording</span>
+        </button>
+        <div class="sec"><span class="eyebrow">Recent notes</span><span class="chip">vault</span></div>
+        <div class="note"><span class="dot"></span><div><h4>NXT Training Academy Studio Review</h4>
+          <small>Projects/CXVentures/Clients/NXT/Meetings · Fri</small></div></div>
+        <div class="note"><span class="dot"></span><div><h4>Interview with Northwind | Alex Doe</h4>
+          <small>Meetings · Thu</small></div></div>
+      </div>
+      <div class="foot">Everything stays on this Mac</div>
+    </div>
+    <p class="caption"><b>B · Badge.</b> Keeps the reference lockup intact — dot,
+      REC, tight brackets — as a mark on the left, with the verb beside it. The
+      mark is reusable at this size (tray, notifications, the recording view),
+      which neither other variant gives you.</p>
+  </div>
+
+  <!-- ══════════ C ══════════ -->
+  <div class="slot" data-slot="c">
+    <div class="pop">
+      <div class="head">
+        <img class="mark" src="../assets/icon.png" alt="">
+        <b>CXNotes</b>
+        <span class="state"><span class="dot ok"></span> Ready</span>
+      </div>
+      <div class="body">
+        <button class="rec-btn rec-c">
+          <span class="br tl"></span><span class="br tr"></span>
+          <span class="br bl"></span><span class="br br2"></span>
+          <span class="lockup">
+            <span class="reddot"></span>
+            <span class="wordmark">REC</span>
+          </span>
+          <span class="cap">Start recording</span>
+        </button>
+        <div class="sec"><span class="eyebrow">Recent notes</span><span class="chip">vault</span></div>
+        <div class="note"><span class="dot"></span><div><h4>NXT Training Academy Studio Review</h4>
+          <small>Projects/CXVentures/Clients/NXT/Meetings · Fri</small></div></div>
+        <div class="note"><span class="dot"></span><div><h4>Interview with Northwind | Alex Doe</h4>
+          <small>Meetings · Thu</small></div></div>
+      </div>
+      <div class="foot">Everything stays on this Mac</div>
+    </div>
+    <p class="caption"><b>C · Viewfinder.</b> The reference, near-literal: the
+      button is mostly glass, and the brackets plus the lockup carry it. Biggest
+      and most confident, and the mode line moves to a caption underneath — which
+      is also the risk, since “system only” gets quieter.</p>
+  </div>
+
+</div>
+
+<p class="footnote">
+  Mock exploration page — data is static. Translucency here is a browser
+  <code>backdrop-filter</code> standing in for the app’s native vibrancy; the
+  chosen variant is re-verified in the Electron harness before it ships.
+</p>
+
+<script>
+  const stage = document.getElementById('stage');
+  const buttons = [...document.querySelectorAll('.switcher button')];
+
+  function show(which) {
+    buttons.forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.v === which)));
+    stage.classList.toggle('single', which !== 'all');
+    document.querySelectorAll('.slot').forEach((slot) => {
+      slot.classList.toggle('hidden', which !== 'all' && slot.dataset.slot !== which);
+    });
+  }
+
+  buttons.forEach((b) => b.addEventListener('click', () => show(b.dataset.v)));
+  show('all');
+</script>
+</body>
+</html>

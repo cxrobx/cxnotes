@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline';">
+  <title>Still recording?</title>
+  <style>
+    /* ── glass ──────────────────────────────────────────────
+       This window sits on a native NSVisualEffectView (main.js GLASS.popover),
+       so the desktop behind it is really blurred; these alphas are the tint
+       half of that pair and are stamped onto <html> as an inline style by
+       main's applyGlass. The fallbacks are OPAQUE because the first paint can
+       precede the push, and a prompt that flashes solid beats one that flashes
+       as floating text on bare blur.
+
+       SPACE-separated triplets, never comma-separated: consumed as
+       `rgb(var(--x) / var(--alpha-y))`, a comma list expands to the invalid
+       `rgb(28, 26, 23 / 0.7)`, and an invalid background paints NOTHING rather
+       than falling back — which looks like very good glass instead of a bug. */
+    :root {
+      --alpha-pane: 1;
+      --alpha-chrome: 1;
+      --alpha-card: 1;
+      --surface-pane: 28 26 23;
+      --surface-card: 20 19 17;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      background: transparent;
+      font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif;
+      -webkit-user-select: none;
+      user-select: none;
+      overflow: hidden;
+    }
+
+    /* The WINDOW is the card now — macOS rounds it, shadows it, and clips the
+       vibrancy material to those corners. The old 6px margin made room for the
+       CSS shadow; kept, it would frame the card in a rectangular blurred slab,
+       since the material fills the window's whole rect. The radius matches the
+       window's own rounding, so a larger one here would just get cut square at
+       the corners. */
+    .banner {
+      position: relative;
+      margin: 0;
+      height: 100%;
+      /* The THIN layer, same call as the menu-bar panel's field: these are
+         small surfaces floating over someone's screen mid-meeting, so they
+         should read as a pane of glass laid on the desktop rather than as a
+         solid card that happens to have a blurred edge. The content alpha
+         belongs to windows you sit and work in. */
+      background: rgb(var(--surface-pane) / var(--alpha-chrome));
+      border-radius: 11px;
+      overflow: hidden;
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+      display: flex;
+      align-items: center;
+      padding: 0 16px 0 56px;
+      -webkit-app-region: drag;
+    }
+
+    /* Amber accent — this is a "heads up", not a routine prompt. */
+    .accent {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 4px;
+      background: linear-gradient(90deg, #ff9f0a 0%, #ffb340 100%);
+    }
+
+    .close {
+      position: absolute;
+      top: 8px;
+      left: 8px;
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.08);
+      border: none;
+      color: rgba(255, 255, 255, 0.7);
+      cursor: pointer;
+      font-size: 12px;
+      line-height: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.15s;
+      -webkit-app-region: no-drag;
+    }
+    .close:hover { background: rgba(255, 255, 255, 0.15); }
+
+    .icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 10px;
+      background: #ff9f0a;
+      margin-right: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+      flex-shrink: 0;
+    }
+
+    .text {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .title {
+      font-size: 13px;
+      font-weight: 600;
+      color: rgba(255, 255, 255, 0.95);
+      letter-spacing: -0.1px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .subtitle {
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.72);
+      margin-top: 1px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .actions {
+      display: flex;
+      align-items: center;
+      gap: 1px;
+      flex-shrink: 0;
+      margin-left: 12px;
+    }
+
+    .keep {
+      background: white;
+      color: black;
+      border: none;
+      padding: 7px 16px;
+      border-radius: 16px 0 0 16px;
+      font-size: 13px;
+      font-weight: 600;
+      font-family: inherit;
+      cursor: pointer;
+      transition: opacity 0.15s;
+      -webkit-app-region: no-drag;
+    }
+    .keep:hover { opacity: 0.85; }
+    .keep:active { opacity: 0.7; }
+
+    .stop {
+      background: #3a3a3c;
+      color: white;
+      border: none;
+      padding: 7px 14px;
+      border-radius: 0 16px 16px 0;
+      font-size: 13px;
+      font-weight: 600;
+      font-family: inherit;
+      cursor: pointer;
+      transition: background 0.15s;
+      -webkit-app-region: no-drag;
+    }
+    .stop:hover { background: #48484a; }
+    .stop:active { background: #2c2c2e; }
+  </style>
+</head>
+<body>
+  <div class="banner">
+    <div class="accent"></div>
+    <button class="close" id="btn-close" title="Keep recording">✕</button>
+    <div class="icon">🔇</div>
+    <div class="text">
+      <div class="title" id="prompt-title">No audio detected</div>
+      <div class="subtitle" id="prompt-subtitle">Still recording? Auto-stops soon…</div>
+    </div>
+    <div class="actions">
+      <button class="keep" id="btn-keep">Keep recording</button>
+      <button class="stop" id="btn-stop">Stop &amp; save</button>
+    </div>
+  </div>
+
+  <script>
+    function fmtCountdown(seconds) {
+      const s = Math.max(0, Math.floor(seconds));
+      const m = Math.floor(s / 60);
+      const r = s % 60;
+      return `${m}:${r.toString().padStart(2, '0')}`;
+    }
+
+    // The ✕ button is explicitly "Keep recording" — never a silent no-op that
+    // would leave the grace timer armed.
+    document.getElementById('btn-close').addEventListener('click', () => {
+      window.silencePrompt.keepRecording();
+    });
+    document.getElementById('btn-keep').addEventListener('click', () => {
+      window.silencePrompt.keepRecording();
+    });
+    document.getElementById('btn-stop').addEventListener('click', () => {
+      window.silencePrompt.stopNow();
+    });
+
+    (async () => {
+      let graceSeconds = 60;
+      try {
+        const ctx = await window.silencePrompt.getContext();
+        if (ctx) {
+          const minutes = Number(ctx.minutes) || 5;
+          graceSeconds = Number(ctx.graceSeconds) || 60;
+          const plural = minutes === 1 ? 'minute' : 'minutes';
+          document.getElementById('prompt-title').textContent =
+            `No audio for ${minutes} ${plural}`;
+        }
+      } catch (err) {
+        // Leave defaults
+      }
+
+      // Display-only countdown. The main process owns the authoritative grace
+      // timer and the actual auto-stop — this never calls stopNow() itself, so
+      // there is no drift-induced double-stop.
+      const subtitle = document.getElementById('prompt-subtitle');
+      let remaining = graceSeconds;
+      const render = () => {
+        subtitle.textContent = `Still recording? Auto-stops in ${fmtCountdown(remaining)}`;
+      };
+      render();
+      const tick = setInterval(() => {
+        remaining -= 1;
+        if (remaining <= 0) {
+          remaining = 0;
+          render();
+          clearInterval(tick);
+          return;
+        }
+        render();
+      }, 1000);
+    })();
+  </script>
+</body>
+</html>

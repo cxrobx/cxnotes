@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline';">
+  <title>Start Recording</title>
+  <style>
+    /* ── glass ──────────────────────────────────────────────
+       Sits on a native NSVisualEffectView (main.js GLASS.window). It paints one
+       surface and nothing stacks on it, so it needs only one alpha of the three
+       — and it takes the THIN one: this is a transient sheet you fill in and
+       dismiss, not a window you sit and work in.
+
+       SPACE-separated triplet, never comma-separated: consumed as
+       `rgb(var(--x) / var(--alpha-y))`, a comma list expands to the invalid
+       `rgb(28, 26, 23 / 0.7)`, and an invalid background paints NOTHING rather
+       than falling back. The opaque fallback covers the pre-push first paint. */
+    :root {
+      --alpha-pane: 1;
+      --alpha-chrome: 1;
+      --surface-pane: 28 26 23;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif;
+      /* The thin layer — see the prompts. The fields below stay dark and
+         opaque on top of it, because a text input is the one thing here
+         that has to stay readable at every dial position. */
+      background: rgb(var(--surface-pane) / var(--alpha-chrome));
+      color: rgba(255, 255, 255, 0.95);
+      padding: 24px 28px;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+
+    .titlebar-drag {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 38px;
+      -webkit-app-region: drag;
+      z-index: 10;
+    }
+
+    h2 {
+      font-size: 18px;
+      font-weight: 600;
+      margin-top: 20px;
+      margin-bottom: 20px;
+      letter-spacing: -0.3px;
+      color: rgba(255, 255, 255, 0.95);
+    }
+
+    .form-group {
+      margin-bottom: 16px;
+    }
+
+    label {
+      display: block;
+      font-size: 11px;
+      font-weight: 600;
+      color: rgba(255, 255, 255, 0.70);
+      margin-bottom: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    input, textarea {
+      width: 100%;
+      padding: 10px 14px;
+      border: 1px solid rgba(80, 80, 80, 0.78);
+      border-radius: 14px;
+      font-size: 15px;
+      font-family: inherit;
+      background: rgba(12, 12, 12, 0.98);
+      color: rgba(255, 255, 255, 0.95);
+      outline: none;
+      transition: border-color 0.15s, box-shadow 0.15s;
+      -webkit-app-region: no-drag;
+    }
+
+    input:focus, textarea:focus {
+      border-color: rgba(208, 208, 212, 0.5);
+      box-shadow: 0 0 0 3px rgba(208, 208, 212, 0.1);
+    }
+
+    input::placeholder, textarea::placeholder {
+      color: rgba(255, 255, 255, 0.48);
+    }
+
+    textarea {
+      resize: vertical;
+      min-height: 64px;
+    }
+
+    .buttons {
+      display: flex;
+      gap: 10px;
+      margin-top: 24px;
+      justify-content: flex-end;
+    }
+
+    button {
+      padding: 10px 22px;
+      border: none;
+      border-radius: 14px;
+      font-size: 14px;
+      font-weight: 600;
+      font-family: inherit;
+      cursor: pointer;
+      transition: opacity 0.15s;
+      -webkit-app-region: no-drag;
+    }
+
+    button:hover { opacity: 0.85; }
+    button:active { opacity: 0.7; }
+
+    .btn-skip {
+      background: rgba(80, 80, 80, 0.3);
+      color: rgba(255, 255, 255, 0.78);
+    }
+
+    .btn-start {
+      background: #ff453a;
+      color: white;
+      min-width: 160px;
+    }
+
+    .recording-dot {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: white;
+      margin-right: 6px;
+      vertical-align: middle;
+    }
+
+    .hint {
+      margin-top: 12px;
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.52);
+      text-align: center;
+    }
+
+    kbd {
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 4px;
+      padding: 1px 5px;
+      font-size: 10px;
+      font-family: inherit;
+    }
+  </style>
+</head>
+<body>
+  <div class="titlebar-drag"></div>
+
+  <h2>Meeting Context</h2>
+
+  <div class="form-group">
+    <label for="title">Title</label>
+    <input type="text" id="title" placeholder="e.g. Weekly sync with Devon" autofocus>
+  </div>
+
+  <div class="form-group">
+    <label for="participants">Participants</label>
+    <input type="text" id="participants" placeholder="e.g. Chris, Devon Horton">
+  </div>
+
+  <div class="form-group">
+    <label for="agenda">Agenda / Notes</label>
+    <textarea id="agenda" rows="3" placeholder="Optional — topics to discuss"></textarea>
+  </div>
+
+  <div class="buttons">
+    <button class="btn-skip" id="btn-skip">Skip</button>
+    <button class="btn-start" id="btn-start"><span class="recording-dot"></span> Start Recording</button>
+  </div>
+
+  <div class="hint"><kbd>⌘</kbd> + <kbd>Enter</kbd> to start · <kbd>Esc</kbd> to cancel</div>
+
+  <script src="pre-record.js"></script>
+</body>
+</html>

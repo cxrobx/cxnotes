@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline';">
+  <title>File this note?</title>
+  <style>
+    /* ── glass ──────────────────────────────────────────────
+       This window sits on a native NSVisualEffectView (main.js GLASS.popover),
+       so the desktop behind it is really blurred; these alphas are the tint
+       half of that pair and are stamped onto <html> as an inline style by
+       main's applyGlass. The fallbacks are OPAQUE because the first paint can
+       precede the push, and a prompt that flashes solid beats one that flashes
+       as floating text on bare blur.
+
+       SPACE-separated triplets, never comma-separated: consumed as
+       `rgb(var(--x) / var(--alpha-y))`, a comma list expands to the invalid
+       `rgb(28, 26, 23 / 0.7)`, and an invalid background paints NOTHING rather
+       than falling back — which looks like very good glass instead of a bug. */
+    :root {
+      --alpha-pane: 1;
+      --alpha-chrome: 1;
+      --alpha-card: 1;
+      --surface-pane: 28 26 23;
+      --surface-card: 20 19 17;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      background: transparent;
+      font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif;
+      -webkit-user-select: none;
+      user-select: none;
+      overflow: hidden;
+    }
+
+    /* The WINDOW is the card now — macOS rounds it, shadows it, and clips the
+       vibrancy material to those corners. The old 6px margin made room for the
+       CSS shadow; kept, it would frame the card in a rectangular blurred slab,
+       since the material fills the window's whole rect. The radius matches the
+       window's own rounding, so a larger one here would just get cut square at
+       the corners. */
+    .banner {
+      position: relative;
+      margin: 0;
+      height: 100%;
+      /* The THIN layer, same call as the menu-bar panel's field: these are
+         small surfaces floating over someone's screen mid-meeting, so they
+         should read as a pane of glass laid on the desktop rather than as a
+         solid card that happens to have a blurred edge. The content alpha
+         belongs to windows you sit and work in. */
+      background: rgb(var(--surface-pane) / var(--alpha-chrome));
+      border-radius: 11px;
+      overflow: hidden;
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+      display: flex;
+      flex-direction: column;
+      padding: 14px 16px 12px 16px;
+      -webkit-app-region: drag;
+    }
+
+    /* Blue accent — a routine triage ask, not an alarm. */
+    .accent {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 4px;
+      background: linear-gradient(90deg, #0a84ff 0%, #5ac8fa 100%);
+    }
+
+    .close {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.08);
+      border: none;
+      color: rgba(255, 255, 255, 0.7);
+      cursor: pointer;
+      font-size: 12px;
+      line-height: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.15s;
+      -webkit-app-region: no-drag;
+    }
+    .close:hover { background: rgba(255, 255, 255, 0.15); }
+
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 10px;
+      padding-right: 26px;
+    }
+
+    .icon {
+      width: 30px;
+      height: 30px;
+      border-radius: 8px;
+      background: #0a84ff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+      flex-shrink: 0;
+    }
+
+    .text { flex: 1; min-width: 0; }
+
+    .title {
+      font-size: 13px;
+      font-weight: 600;
+      color: rgba(255, 255, 255, 0.95);
+      letter-spacing: -0.1px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .subtitle {
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.72);
+      margin-top: 1px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .options {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .candidate {
+      background: rgba(255, 255, 255, 0.1);
+      color: rgba(255, 255, 255, 0.95);
+      border: none;
+      padding: 7px 12px;
+      border-radius: 9px;
+      font-size: 12px;
+      font-weight: 600;
+      font-family: inherit;
+      text-align: left;
+      cursor: pointer;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      transition: background 0.15s;
+      -webkit-app-region: no-drag;
+    }
+    .candidate:hover { background: rgba(255, 255, 255, 0.18); }
+    .candidate:active { background: rgba(255, 255, 255, 0.24); }
+    .candidate .rel {
+      display: block;
+      font-size: 10px;
+      font-weight: 400;
+      color: rgba(255, 255, 255, 0.66);
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .inbox {
+      background: transparent;
+      color: rgba(255, 255, 255, 0.7);
+      border: none;
+      padding: 6px 12px;
+      border-radius: 9px;
+      font-size: 12px;
+      font-weight: 500;
+      font-family: inherit;
+      cursor: pointer;
+      transition: color 0.15s;
+      -webkit-app-region: no-drag;
+    }
+    .inbox:hover { color: rgba(255, 255, 255, 0.8); }
+  </style>
+</head>
+<body>
+  <div class="banner">
+    <div class="accent"></div>
+    <button class="close" id="btn-close" title="Leave in Inbox">✕</button>
+    <div class="header">
+      <div class="icon">🗂</div>
+      <div class="text">
+        <div class="title" id="prompt-title">Where should this note go?</div>
+        <div class="subtitle" id="prompt-subtitle">Filed to Inbox for now — pick a folder to move it</div>
+      </div>
+    </div>
+    <div class="options" id="options"></div>
+  </div>
+
+  <script>
+    // ✕ and "Leave in Inbox" are the same non-destructive dismiss — the note
+    // is already in Inbox/ and stays there.
+    document.getElementById('btn-close').addEventListener('click', () => {
+      window.filingPrompt.dismiss();
+    });
+
+    (async () => {
+      const options = document.getElementById('options');
+      let ctx = null;
+      try {
+        ctx = await window.filingPrompt.getContext();
+      } catch (err) {
+        // Fall through to the inbox-only rendering below
+      }
+
+      if (ctx && ctx.noteTitle) {
+        document.getElementById('prompt-title').textContent = `File “${ctx.noteTitle}”?`;
+      }
+
+      const candidates = (ctx && Array.isArray(ctx.candidates)) ? ctx.candidates.slice(0, 3) : [];
+      for (const candidate of candidates) {
+        const btn = document.createElement('button');
+        btn.className = 'candidate';
+        btn.textContent = candidate.label;
+        const rel = document.createElement('span');
+        rel.className = 'rel';
+        rel.textContent = candidate.rel;
+        btn.appendChild(rel);
+        btn.addEventListener('click', async () => {
+          btn.disabled = true;
+          const result = await window.filingPrompt.choose(candidate.id);
+          if (!result || !result.success) btn.disabled = false;
+        });
+        options.appendChild(btn);
+      }
+
+      const inboxBtn = document.createElement('button');
+      inboxBtn.className = 'inbox';
+      inboxBtn.textContent = 'Leave in Inbox';
+      inboxBtn.addEventListener('click', () => window.filingPrompt.dismiss());
+      options.appendChild(inboxBtn);
+    })();
+  </script>
+</body>
+</html>

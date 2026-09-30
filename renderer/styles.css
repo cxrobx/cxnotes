@@ -1,0 +1,1574 @@
+/*
+ * CXNotes settings window — visual language shared with cxmail
+ * (warm charcoal surfaces, flat cards, Apple-blue accent, muted
+ * sage/terracotta/amber semantics, small radii, thin scrollbars).
+ */
+
+:root {
+  /* ── glass ────────────────────────────────────────────────────
+     The window sits on a native NSVisualEffectView (main.js GLASS.window);
+     these three alphas are the tint half of that pair, stamped onto <html> as
+     an inline style by main's applyGlass. The values here are only the
+     pre-push fallback and are deliberately OPAQUE — the first paint can
+     precede the push, and flashing solid beats flashing as bare blur with
+     floating text.
+
+     Surfaces are RGB TRIPLETS because each is consumed as
+     `rgb(var(--x) / var(--alpha-y))`; pre-multiplying the alpha in would break
+     every one of those slots. */
+  --alpha-pane: 1;
+  --alpha-chrome: 1;
+  --alpha-card: 1;
+
+  /* The sidebar is LIGHTER than the content it sits beside, which is the
+     inversion the whole look rests on: chrome laid over the work rather than a
+     gutter cut out of it. It also survives transparency — a bar darker than
+     its neighbour stops reading as a surface at any real alpha and starts
+     reading as a hole punched through to the wallpaper. It was rgb(24,22,20),
+     i.e. four values DARKER than the content, which is the opposite.
+
+     SPACE-separated, never comma-separated. These are consumed as
+     `rgb(var(--x) / var(--alpha-y))`, so a comma list expands to
+     `rgb(28, 26, 23 / 0.7)` — legacy commas mixed with slash-alpha, which is
+     invalid. An invalid background is not partially applied or clamped: the
+     whole declaration is dropped and the element paints NOTHING. That failure
+     looks like a beautifully glassy pane rather than like a syntax error, so
+     it survives a screenshot review. It shipped that way once already. */
+  --surface-pane: 28 26 23;
+  --surface-chrome: 46 43 38;
+  --surface-card: 42 39 34;
+
+  --accent: rgb(10, 132, 255);
+  --accent-rgb: 10, 132, 255;
+  --accent-hover: rgb(8, 106, 204);
+  --accent-soft: rgba(10, 132, 255, 0.1);
+  --accent-strong: rgba(10, 132, 255, 0.2);
+
+  /* The ONE pane in this window. Everything below is a wash ON it. */
+  --bg-body: rgb(var(--surface-pane) / var(--alpha-pane));
+  --bg-body-alt: rgb(var(--surface-pane) / var(--alpha-pane));
+
+  /* Sections and cards are WASHES, not surfaces of their own — and that is the
+     difference between a glass window and an opaque one. `.content` is already
+     translucent; a card that paints its own tinted fill on top composites with
+     it, so a section at 0.87 over a pane at 0.73 is 0.965 — effectively opaque.
+     Since sections cover nearly the whole settings window, painting them that
+     way would leave the blur visible only in the sidebar and read as if the
+     setting barely worked.
+
+     Alpha-on-white instead. A wash lifts its patch of the pane rather than
+     replacing it, so depth survives at every dial position and the whole column
+     stays one sheet of glass. The panel can afford tinted cards because they
+     are small and few; here they are the entire surface. */
+  --bg-surface: rgba(255, 255, 255, 0.045);
+  --bg-surface-strong: rgba(0, 0, 0, 0.16);
+  --bg-card: rgba(255, 255, 255, 0.055);
+  --bg-card-hover: rgba(255, 255, 255, 0.1);
+
+  /* Deliberately OPAQUE, and this is a decision rather than an oversight.
+     Inputs are the things you have to be able to READ and type into, and
+     native <select> menus render as AppKit menus over the desktop — a
+     translucent field at the glassy end of the dial is text on raw wallpaper. */
+  --bg-input: rgb(35, 32, 28);
+  --bg-input-focus: rgb(38, 35, 30);
+  --bg-elevated: rgb(53, 49, 43);
+
+  /* Lifted for glass. These greys were picked against a solid charcoal; the
+     pane is now translucent, so every one of them is competing with whatever
+     wallpaper is behind the window rather than with a colour we control. The
+     subtle step moved furthest because it carries section headings and the
+     smallest helper text. */
+  --text-primary: rgb(255, 255, 255);
+  --text-secondary: rgb(222, 220, 217);
+  --text-muted: rgb(182, 179, 175);
+  --text-subtle: rgb(150, 147, 143);
+
+  /* Alpha-on-white rather than solid warm greys. Over a translucent pane a
+     solid hairline reads as a line drawn ON the glass; an alpha one tints
+     whatever is behind it, which is what an edge on glass actually does. */
+  --border: rgba(255, 255, 255, 0.16);
+  --border-subtle: rgba(255, 255, 255, 0.07);
+  --border-strong: rgba(255, 255, 255, 0.24);
+
+  --success: rgb(143, 179, 136);
+  --success-rgb: 143, 179, 136;
+  --warning: rgb(212, 168, 90);
+  --warning-rgb: 212, 168, 90;
+  --danger: rgb(212, 118, 106);
+  --danger-rgb: 212, 118, 106;
+  --info: var(--accent);
+
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 10px;
+  --radius-xl: 12px;
+  --radius-full: 999px;
+
+  --shadow-soft: 0 2px 8px rgba(0, 0, 0, 0.3), 0 1px 3px rgba(0, 0, 0, 0.2);
+  --shadow-card: 0 8px 32px rgba(0, 0, 0, 0.4), 0 2px 8px rgba(0, 0, 0, 0.3);
+  --shadow-float: 0 2px 8px rgba(0, 0, 0, 0.3);
+
+  --spacing: 16px;
+  --transition: 150ms ease;
+
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  height: 100%;
+  background: transparent;
+}
+
+body {
+  min-height: 100%;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-primary);
+  /* TRANSPARENT, not --bg-body. An opaque body paints straight over the
+     visual-effect view: the blur would be installed, correctly configured and
+     completely invisible. Worse, every pane's alpha would then composite over
+     THIS rather than over the material, so turning the dial would move each
+     pane toward the body's colour instead of toward the desktop — which reads
+     as the transparency setting doing nothing at all. The visible background
+     is painted by .content and .sidebar, each on its own. */
+  background: transparent;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/*
+ * Two-column shell: a fixed sidebar of section links beside a scrolling
+ * content column. The window is `titleBarStyle: 'hiddenInset'`, so the top of
+ * the sidebar reserves room for the traffic lights and owns the drag region.
+ */
+.container {
+  position: relative;
+  z-index: 1;
+  width: 100vw;
+  height: 100vh;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: row;
+  gap: 0;
+  overflow: hidden;
+}
+
+.sidebar {
+  position: relative;
+  width: 208px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0 10px 12px;
+  background: rgb(var(--surface-chrome) / var(--alpha-chrome));
+  border-right: 1px solid var(--border-subtle);
+  -webkit-app-region: drag;
+}
+
+/* Reserved space for the inset traffic lights. */
+.sidebar-drag {
+  height: 38px;
+  flex-shrink: 0;
+}
+
+.sidebar-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 8px 16px;
+}
+
+.sidebar-brand-copy {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.sidebar-brand-copy strong {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.sidebar-brand-copy small {
+  font-size: 11px;
+  color: var(--text-subtle);
+}
+
+.sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  -webkit-app-region: no-drag;
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 7px 9px;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--transition), color var(--transition);
+}
+
+.nav-item:hover {
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-primary);
+}
+
+.nav-item.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.nav-ic {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.privacy-card {
+  margin-top: auto;
+  padding: 10px 11px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: rgba(var(--success-rgb), 0.06);
+  font-size: 10.5px;
+  line-height: 1.45;
+  color: var(--text-muted);
+  -webkit-app-region: no-drag;
+}
+
+.privacy-card strong {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-bottom: 3px;
+  font-size: 11px;
+  color: var(--success);
+}
+
+/* Right column: sticky-free scrolling content + pinned footer. */
+/* The content column paints the pane. The .container above it paints NOTHING —
+   one opaque layer across the whole window is exactly what stops the sidebar
+   being able to sit lighter than the content: its alpha would composite over
+   that shared layer instead of over the blurred desktop. The gap between the
+   two columns is meant to be desktop. */
+.content {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: rgb(var(--surface-pane) / var(--alpha-pane));
+}
+
+/* Panes are all in the DOM; only visibility toggles (see setupPaneNav). */
+.pane {
+  display: none;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.pane.active {
+  display: flex;
+  animation: pane-in 180ms ease;
+}
+
+@keyframes pane-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
+
+.pane-head {
+  padding: 4px 2px 0;
+}
+
+.pane-head h1 {
+  font-size: 20px;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.pane-head p {
+  margin-top: 3px;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+.app-mark {
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  flex-shrink: 0;
+  background: center / cover no-repeat url('../assets/icon.png');
+  box-shadow: var(--shadow-soft);
+  overflow: hidden;
+}
+
+main {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px 20px 20px;
+  overflow-y: auto;
+}
+
+/* Chrome, same family as the sidebar — but a WASH, because it sits INSIDE the
+   content column rather than beside it. Painting the chrome colour at its own
+   alpha here would composite with the pane underneath and come out denser than
+   the content it is meant to read lighter than: the ordering would invert. */
+footer {
+  flex-shrink: 0;
+  padding: 12px 20px;
+  border-top: 1px solid var(--border-subtle);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.footer-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.footer-buttons {
+  display: flex;
+  gap: 8px;
+}
+
+#version {
+  color: var(--text-subtle);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+}
+
+.section {
+  padding: 20px;
+  border-radius: var(--radius-xl);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-soft);
+}
+
+.section::after {
+  display: none;
+}
+
+.section h2 {
+  margin-bottom: 14px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-subtle);
+}
+
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.section-header h2 {
+  margin-bottom: 0;
+}
+
+/*
+ * Dependency status reads as a row of pills rather than a card grid — five
+ * green dots scan in a glance, and the whole block costs one line instead of
+ * a third of the pane.
+ */
+.status-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.status-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-card);
+  transition: background-color var(--transition), border-color var(--transition);
+}
+
+.status-item:hover {
+  background: var(--bg-card-hover);
+  border-color: var(--border);
+}
+
+.status-icon {
+  display: inline-block;
+  position: relative;
+  width: 8px;
+  height: 8px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--text-subtle);
+  color: var(--text-muted);
+}
+
+.status-icon.is-loading {
+  width: 10px;
+  height: 10px;
+  background: transparent;
+  border: 2px solid rgba(var(--accent-rgb), 0.22);
+  border-top-color: var(--accent);
+  animation: spin 0.8s linear infinite;
+}
+
+.status-icon.is-ready {
+  background: var(--success);
+}
+
+.status-icon.is-error {
+  background: var(--danger);
+  box-shadow: 0 0 0 3px rgba(var(--danger-rgb), 0.14);
+}
+
+.status-info {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+
+.status-info strong {
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+/* The subtitle is redundant inside a pill — the name carries it. */
+.status-info small {
+  display: none;
+}
+
+.form-group {
+  margin-bottom: 18px;
+}
+
+.form-group:last-child {
+  margin-bottom: 0;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.form-group label small {
+  display: block;
+  margin-top: 3px;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+/*
+ * A note UNDER a control rather than under its label — live feedback about the
+ * value the user just picked (e.g. "that folder isn't an Obsidian vault").
+ * Deliberately not a `label` child: it changes after load, so it must not
+ * inherit the label's static styling.
+ */
+.form-group .field-note {
+  display: block;
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.form-group .field-note:empty {
+  display: none;
+}
+
+.form-group .field-note.is-warning {
+  color: var(--warning);
+}
+
+/*
+ * Transparency slider.
+ *
+ * A native range input rather than a custom control: it is one setting, it is
+ * keyboard- and VoiceOver-accessible for free, and it needs no dependency.
+ * WebKit needs the vendor pseudo-elements spelled out — without
+ * `-webkit-appearance: none` on the input AND on the thumb, macOS draws its own
+ * aqua slider and every rule below is silently ignored.
+ */
+.slider-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.slider-end {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--text-subtle);
+}
+
+.cx-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  flex: 1;
+  min-width: 0;
+  height: 20px;
+  background: transparent;
+  cursor: grab;
+}
+
+.cx-slider:active {
+  cursor: grabbing;
+}
+
+.cx-slider::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 2px;
+  /* Filled portion drawn with a hard-stop gradient driven by `--fill`, which
+     app.js sets from the value — cheaper and smoother during a drag than a
+     second absolutely-positioned element. */
+  background: linear-gradient(
+    to right,
+    var(--accent) 0%,
+    var(--accent) var(--fill, 38%),
+    rgba(255, 255, 255, 0.18) var(--fill, 38%),
+    rgba(255, 255, 255, 0.18) 100%
+  );
+}
+
+.cx-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  margin-top: -5px; /* centres the 14px thumb on the 4px track */
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+
+.cx-slider:focus-visible {
+  outline: none;
+}
+
+.cx-slider:focus-visible::-webkit-slider-thumb {
+  outline: 2px solid var(--accent-strong);
+  outline-offset: 2px;
+}
+
+input[type="text"],
+input[type="number"],
+textarea,
+.select-input {
+  width: 100%;
+  min-height: 38px;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--bg-input);
+  color: var(--text-primary);
+  font: inherit;
+  outline: none;
+  transition: border-color var(--transition), box-shadow var(--transition), background-color var(--transition);
+}
+
+textarea {
+  resize: vertical;
+}
+
+input[type="text"]::placeholder,
+input[type="number"]::placeholder,
+textarea::placeholder {
+  color: var(--text-subtle);
+}
+
+input[type="text"]:focus,
+input[type="number"]:focus,
+textarea:focus,
+.select-input:focus {
+  border-color: var(--accent);
+  background: var(--bg-input-focus);
+  box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.15);
+}
+
+input[type="text"]:read-only {
+  opacity: 0.82;
+  cursor: default;
+}
+
+.input-with-button,
+.input-with-slider {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.input-with-button input,
+.input-with-button select {
+  flex: 1;
+}
+
+input[type="range"] {
+  flex: 1;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--bg-elevated);
+  outline: none;
+  -webkit-appearance: none;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: none;
+  background: var(--accent);
+  box-shadow: var(--shadow-soft);
+  cursor: pointer;
+}
+
+input[type="range"]::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border: none;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: var(--shadow-soft);
+  cursor: pointer;
+}
+
+#retention-days-value {
+  min-width: 60px;
+  text-align: right;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+/*
+ * Toggle rows: label on the left, an iOS-style switch on the right. The markup
+ * is unchanged (a real <input type="checkbox"> with the same id) — only the
+ * presentation moved, so every renderer read/write still works.
+ */
+/* Scoped under .form-group so it outranks `.form-group label { display:block }`. */
+.form-group .checkbox-label,
+.checkbox-label {
+  display: flex;
+  flex-direction: row-reverse;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 0;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid transparent;
+  font-weight: 400;
+  transition: background-color var(--transition), border-color var(--transition);
+  cursor: pointer;
+}
+
+.checkbox-label:hover {
+  border-color: var(--border-subtle);
+  background: var(--bg-card);
+}
+
+input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+  flex-shrink: 0;
+  cursor: pointer;
+  accent-color: var(--accent);
+}
+
+.checkbox-label input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  position: relative;
+  width: 36px;
+  height: 21px;
+  margin: 0;
+  border-radius: var(--radius-full);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  transition: background-color var(--transition), border-color var(--transition);
+}
+
+.checkbox-label input[type="checkbox"]::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
+  transition: transform var(--transition);
+}
+
+.checkbox-label input[type="checkbox"]:checked {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.checkbox-label input[type="checkbox"]:checked::after {
+  transform: translateX(15px);
+}
+
+.checkbox-label input[type="checkbox"]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.form-group .checkbox-label span,
+.checkbox-label span {
+  flex: 1;
+  min-width: 0;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.form-group .checkbox-label small,
+.checkbox-label small {
+  display: block;
+  margin-top: 3px;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+.select-input {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 36px;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--text-muted) 50%),
+    linear-gradient(135deg, var(--text-muted) 50%, transparent 50%);
+  background-position:
+    calc(100% - 16px) calc(50% - 2px),
+    calc(100% - 11px) calc(50% - 2px);
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+}
+
+.select-input option {
+  color: var(--text-primary);
+  background: var(--bg-surface);
+}
+
+.mode-toggle {
+  display: flex;
+  gap: 4px;
+  padding: 3px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-input);
+}
+
+.mode-btn {
+  flex: 1;
+  min-height: 34px;
+  padding: 7px 12px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color var(--transition), color var(--transition), border-color var(--transition);
+}
+
+.mode-btn.active {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--text-primary);
+}
+
+.mode-btn:hover:not(.active) {
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+}
+
+.label-inputs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.label-input-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.label-prefix {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.label-input-group input[type="text"] {
+  width: auto;
+  flex: 1;
+}
+
+.info-notice {
+  margin-top: 14px;
+  padding: 11px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(var(--accent-rgb), 0.2);
+  background: rgba(var(--accent-rgb), 0.08);
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.info-notice strong {
+  color: var(--text-primary);
+}
+
+.preflight-panel {
+  margin-top: 12px;
+  padding: 10px 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-card);
+}
+
+.preflight-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.preflight-item:last-child {
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+.preflight-item:first-child {
+  padding-top: 0;
+}
+
+.preflight-item span {
+  flex-shrink: 0;
+  font-size: 15px;
+}
+
+.preflight-item div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.preflight-item strong {
+  color: var(--text-primary);
+  font-size: 12px;
+}
+
+.preflight-item small {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.preflight-item.pass strong {
+  color: var(--success);
+}
+
+.preflight-item.fail strong,
+.preflight-item.fail small {
+  color: var(--danger);
+}
+
+.btn {
+  min-height: 34px;
+  padding: 7px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  transition: background-color var(--transition), border-color var(--transition), color var(--transition), opacity var(--transition);
+}
+
+.btn:active {
+  opacity: 0.85;
+}
+
+.btn,
+.select-input,
+input,
+a {
+  -webkit-app-region: no-drag;
+}
+
+.btn-primary {
+  color: rgb(255, 255, 255);
+  background: var(--accent);
+  border-color: transparent;
+}
+
+.btn-primary:hover {
+  background: var(--accent-hover);
+}
+
+.btn-secondary {
+  color: var(--text-secondary);
+  background: var(--bg-elevated);
+  border-color: var(--border);
+}
+
+.btn-secondary:hover {
+  color: var(--text-primary);
+  background: var(--bg-card-hover);
+  border-color: var(--border-strong);
+}
+
+.btn-danger {
+  color: var(--danger);
+  background: rgba(var(--danger-rgb), 0.1);
+  border-color: rgba(var(--danger-rgb), 0.2);
+}
+
+.btn-danger:hover {
+  background: rgba(var(--danger-rgb), 0.18);
+}
+
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.recordings-list {
+  max-height: 360px;
+  overflow-y: auto;
+}
+
+.recording-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 6px;
+  padding: 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid transparent;
+  background: var(--bg-card);
+  transition: background-color var(--transition), border-color var(--transition);
+}
+
+.recording-item:last-child {
+  margin-bottom: 0;
+}
+
+.recording-item:hover {
+  background: var(--bg-card-hover);
+  border-color: var(--border-subtle);
+}
+
+.recording-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.recording-name {
+  margin-bottom: 3px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.recording-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.recording-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-left: 8px;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 0 8px;
+  border-radius: var(--radius-full);
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.badge-success {
+  color: var(--success);
+  background: rgba(var(--success-rgb), 0.12);
+}
+
+.badge-warning {
+  color: var(--warning);
+  background: rgba(var(--warning-rgb), 0.14);
+}
+
+.badge-error {
+  color: var(--danger);
+  background: rgba(var(--danger-rgb), 0.12);
+}
+
+.badge-processing {
+  color: var(--accent);
+  background: rgba(var(--accent-rgb), 0.12);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.badge-spinner {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(var(--accent-rgb), 0.25);
+  border-top-color: var(--accent);
+  animation: spin 0.8s linear infinite;
+}
+
+.recording-item.is-processing {
+  border-color: rgba(var(--accent-rgb), 0.2);
+  background: rgba(var(--accent-rgb), 0.05);
+}
+
+.recording-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.icon-btn {
+  min-width: 30px;
+  min-height: 30px;
+  padding: 6px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 14px;
+  cursor: pointer;
+  transition: background-color var(--transition), color var(--transition), border-color var(--transition);
+}
+
+.icon-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-elevated);
+  border-color: var(--border-subtle);
+}
+
+.icon-btn.danger:hover {
+  color: var(--danger);
+  border-color: rgba(var(--danger-rgb), 0.2);
+  background: rgba(var(--danger-rgb), 0.12);
+}
+
+.loading,
+.empty-state {
+  padding: 36px 20px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.storage-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.stat-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 11px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-card);
+}
+
+.stat-label {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.stat-value {
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+/* Sits above the scrolling pane area, spanning the content column. */
+.recording-indicator {
+  flex-shrink: 0;
+  margin: 12px 20px 0;
+  padding: 14px 16px;
+  border-radius: var(--radius-xl);
+  border: 1px solid rgba(var(--danger-rgb), 0.25);
+  background: rgba(var(--danger-rgb), 0.08);
+  box-shadow: var(--shadow-soft);
+  animation: fadeIn 0.2s ease;
+}
+
+.recording-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.companion-badge {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--accent);
+  background: rgba(var(--accent-rgb), 0.08);
+  border: 1px solid rgba(var(--accent-rgb), 0.2);
+  border-radius: var(--radius-sm);
+  padding: 3px 8px;
+  margin-bottom: 8px;
+}
+
+.recording-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--danger);
+  box-shadow: 0 0 0 4px rgba(var(--danger-rgb), 0.15);
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+.recording-label {
+  color: var(--danger);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+.recording-timer {
+  margin-left: auto;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.level-meters {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.level-meter {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.meter-label {
+  min-width: 48px;
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.meter-track {
+  flex: 1;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--bg-elevated);
+  overflow: hidden;
+}
+
+.meter-fill {
+  width: 0%;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--success);
+  transition: width 120ms ease-out, background-color var(--transition);
+}
+
+.meter-fill.level-medium {
+  background: var(--warning);
+}
+
+.meter-fill.level-hot {
+  background: var(--danger);
+}
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.5);
+}
+
+.overlay.hidden {
+  display: none;
+}
+
+.overlay-content {
+  min-width: 320px;
+  padding: 26px;
+  text-align: center;
+  border-radius: var(--radius-xl);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-card);
+}
+
+.overlay-content h3 {
+  margin-bottom: 8px;
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.overlay-content p {
+  margin-bottom: 16px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.spinner {
+  width: 36px;
+  height: 36px;
+  margin: 0 auto 16px;
+  border-radius: 50%;
+  border: 3px solid rgba(var(--accent-rgb), 0.15);
+  border-top-color: var(--accent);
+  animation: spin 0.8s linear infinite;
+}
+
+.progress-bar {
+  width: 100%;
+  height: 4px;
+  margin-bottom: 8px;
+  border-radius: 999px;
+  background: var(--bg-elevated);
+  overflow: hidden;
+}
+
+.progress-fill {
+  width: 0%;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  transition: width 0.3s ease;
+}
+
+#processing-percent {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+}
+
+.toast-container {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 2000;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.toast {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 280px;
+  max-width: 380px;
+  padding: 11px 13px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-card);
+  pointer-events: auto;
+  animation: slideIn 0.2s ease;
+  transition: opacity 0.2s ease;
+}
+
+.toast.toast-success {
+  border-left: 3px solid var(--success);
+}
+
+.toast.toast-error {
+  border-left: 3px solid var(--danger);
+}
+
+.toast.toast-warning {
+  border-left: 3px solid var(--warning);
+}
+
+.toast.toast-info {
+  border-left: 3px solid var(--accent);
+}
+
+.toast-icon {
+  flex-shrink: 0;
+  font-size: 18px;
+}
+
+.toast-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.toast-title {
+  margin-bottom: 2px;
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.toast-message {
+  color: var(--text-muted);
+  font-size: 11px;
+  word-break: break-word;
+}
+
+.toast-close {
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 16px;
+  cursor: pointer;
+  transition: background-color var(--transition), color var(--transition);
+}
+
+.toast-close:hover {
+  background: var(--bg-card-hover);
+  color: var(--text-primary);
+}
+
+.toast.hiding {
+  opacity: 0;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(74, 68, 57, 0.5);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgb(74, 68, 57);
+}
+
+::selection {
+  background: rgba(74, 68, 57, 0.4);
+  color: inherit;
+}
+
+.hidden {
+  display: none !important;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.45;
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateX(12px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 820px) {
+  /* Narrow window: the sidebar sheds its labels and becomes an icon rail. */
+  .sidebar {
+    width: 62px;
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+
+  .nav-item span,
+  .sidebar-brand-copy,
+  .privacy-card {
+    display: none;
+  }
+
+  .nav-item {
+    justify-content: center;
+  }
+
+  .label-inputs,
+  .storage-stats {
+    grid-template-columns: 1fr;
+  }
+
+  /* The section header and footer stay side-by-side — the sidebar has already
+     collapsed to an icon rail, so the content column has room for both. */
+  .recording-item,
+  .input-with-slider {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .footer-buttons,
+  .recording-actions {
+    width: 100%;
+  }
+
+  .footer-buttons {
+    justify-content: flex-end;
+  }
+
+  .recording-badges {
+    margin-left: 0;
+  }
+}
+
+@media (max-width: 640px) {
+  main {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+
+  footer {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+
+  .recording-indicator {
+    margin-left: 12px;
+    margin-right: 12px;
+  }
+
+  .input-with-button,
+  .footer-buttons {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .btn,
+  .input-with-button .btn {
+    width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

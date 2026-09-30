@@ -1,0 +1,554 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;">
+  <title>CXNotes - Settings</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="container">
+    <!-- Sidebar: section nav + live system state -->
+    <aside class="sidebar">
+      <div class="sidebar-drag"></div>
+      <div class="sidebar-brand">
+        <div class="app-mark" aria-hidden="true"></div>
+        <div class="sidebar-brand-copy">
+          <strong>CXNotes</strong>
+          <small>Private meeting capture</small>
+        </div>
+      </div>
+
+      <nav class="sidebar-nav" aria-label="Settings sections">
+        <button class="nav-item active" data-pane="pane-recording" type="button">
+          <svg class="nav-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v10m0 0a4 4 0 1 0 .01 0M5 11a7 7 0 0 0 14 0M12 21v-3"/></svg>
+          <span>Recording</span>
+        </button>
+        <button class="nav-item" data-pane="pane-calendar" type="button">
+          <svg class="nav-ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>
+          <span>Calendar</span>
+        </button>
+        <button class="nav-item" data-pane="pane-notes" type="button">
+          <svg class="nav-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 3h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+          <span>Notes &amp; filing</span>
+        </button>
+        <button class="nav-item" data-pane="pane-recordings" type="button">
+          <svg class="nav-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19h16M6 16V9m4 7V5m4 11v-6m4 6V8"/></svg>
+          <span>Recordings</span>
+        </button>
+        <button class="nav-item" data-pane="pane-storage" type="button">
+          <svg class="nav-ic" viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v12c0 1.66 3.58 3 8 3s8-1.34 8-3V6M4 12c0 1.66 3.58 3 8 3s8-1.34 8-3"/></svg>
+          <span>Storage</span>
+        </button>
+        <button class="nav-item" data-pane="pane-appearance" type="button">
+          <svg class="nav-ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18z"/></svg>
+          <span>Appearance</span>
+        </button>
+      </nav>
+
+      <div class="privacy-card">
+        <strong>
+          <svg class="nav-ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+          Private by design
+        </strong>
+        Recording and transcription never leave this Mac. Summaries use the AI provider you choose.
+      </div>
+    </aside>
+
+    <div class="content">
+      <!-- Recording Indicator (visible during recording) -->
+      <div id="recording-indicator" class="recording-indicator hidden">
+        <div class="recording-header">
+          <div class="recording-dot"></div>
+          <span class="recording-label">Recording</span>
+          <span class="recording-timer" id="recording-timer">00:00</span>
+        </div>
+        <div id="companion-badge" class="companion-badge hidden">
+          Using <span id="companion-provider-name">Meeting Copilot</span> transcript
+        </div>
+        <div class="level-meters">
+          <div class="level-meter" id="meter-system">
+            <span class="meter-label">System</span>
+            <div class="meter-track">
+              <div class="meter-fill" id="meter-fill-system"></div>
+            </div>
+          </div>
+          <div class="level-meter" id="meter-mic">
+            <span class="meter-label">Mic</span>
+            <div class="meter-track">
+              <div class="meter-fill" id="meter-fill-mic"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Main Content -->
+      <main>
+        <!-- ══════════════ RECORDING ══════════════ -->
+        <div class="pane active" id="pane-recording">
+          <div class="pane-head">
+            <h1>Recording</h1>
+            <p>Dual-track capture with on-device transcription and speaker-aware notes.</p>
+          </div>
+
+          <section class="section">
+            <div class="section-header">
+              <h2>System Status</h2>
+              <button class="btn btn-secondary" id="btn-refresh-deps">Refresh</button>
+            </div>
+            <div class="status-grid">
+              <div class="status-item">
+                <span class="status-icon is-loading" id="status-sox"></span>
+                <div class="status-info">
+                  <strong>sox</strong>
+                  <small>Audio Recording</small>
+                </div>
+              </div>
+              <div class="status-item">
+                <span class="status-icon is-loading" id="status-whisper"></span>
+                <div class="status-info">
+                  <strong>Transcription</strong>
+                  <small>Parakeet / whisper.cpp</small>
+                </div>
+              </div>
+              <div class="status-item">
+                <span class="status-icon is-loading" id="status-codex"></span>
+                <div class="status-info">
+                  <strong>AI Summarisation</strong>
+                  <small>Codex / Claude CLI</small>
+                </div>
+              </div>
+              <div class="status-item">
+                <span class="status-icon is-loading" id="status-system-audio"></span>
+                <div class="status-info">
+                  <strong>System Audio</strong>
+                  <small>ScreenCaptureKit</small>
+                </div>
+              </div>
+              <div class="status-item">
+                <span class="status-icon is-loading" id="status-mic"></span>
+                <div class="status-info">
+                  <strong>Microphone</strong>
+                  <small>Voice Input</small>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="section">
+            <h2>Audio Configuration</h2>
+
+            <div class="form-group">
+              <label>
+                Recording Mode
+                <small>Choose single-track (system only) or dual-track (system + mic)</small>
+              </label>
+              <div class="mode-toggle">
+                <button class="mode-btn" id="mode-system" data-mode="system">System Only</button>
+                <button class="mode-btn active" id="mode-dual" data-mode="dual">Dual Track</button>
+              </div>
+            </div>
+
+            <div id="mic-settings">
+              <div class="form-group">
+                <label for="mic-device">
+                  Microphone Device
+                  <small>Select which microphone to use for voice capture</small>
+                </label>
+                <div class="input-with-button">
+                  <select id="mic-device" class="select-input">
+                    <option value="">Loading devices...</option>
+                  </select>
+                  <button class="btn btn-secondary" id="btn-refresh-mics">Refresh</button>
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label for="system-label">
+                  Speaker Labels
+                  <small>Labels used to identify speakers in transcripts and notes</small>
+                </label>
+                <div class="label-inputs">
+                  <div class="label-input-group">
+                    <span class="label-prefix">System:</span>
+                    <input type="text" id="system-label" value="Remote" placeholder="Remote">
+                  </div>
+                  <div class="label-input-group">
+                    <span class="label-prefix">Mic:</span>
+                    <input type="text" id="mic-label" value="Me" placeholder="Me">
+                  </div>
+                </div>
+              </div>
+
+              <div class="info-notice">
+                <strong>Tip:</strong> Use headphones during dual-track recording to prevent system audio from bleeding into your microphone track.
+              </div>
+            </div>
+
+            <div class="form-group" style="margin-top: 16px;">
+              <button class="btn btn-secondary" id="btn-preflight">Run Preflight Check</button>
+              <div id="preflight-panel" class="preflight-panel hidden">
+                <div class="preflight-results" id="preflight-results"></div>
+              </div>
+            </div>
+          </section>
+
+          <section class="section">
+            <h2>Capture Behaviour</h2>
+
+            <div class="form-group">
+              <label class="checkbox-label">
+                <input type="checkbox" id="meeting-detection-enabled">
+                <span>
+                  Detect meetings and offer to take notes
+                  <small>Shows a banner when Zoom, FaceTime, or Google Meet starts a call</small>
+                </span>
+              </label>
+            </div>
+
+            <div class="form-group">
+              <label class="checkbox-label">
+                <input type="checkbox" id="silence-autostop-enabled">
+                <span>
+                  Auto-stop on prolonged silence
+                  <small>Prompts when no one has spoken for a while, and auto-stops if ignored</small>
+                </span>
+              </label>
+            </div>
+
+            <div class="form-group">
+              <label for="silence-autostop-minutes">
+                Silence before prompting (minutes)
+                <small>How long both sides must stay silent before the "still recording?" prompt appears (1–60)</small>
+              </label>
+              <div class="input-with-slider">
+                <input type="number" id="silence-autostop-minutes" min="1" max="60" step="1" style="width: 80px;">
+                <span>minutes</span>
+              </div>
+            </div>
+
+            <div class="info-notice">
+              <strong>Markers:</strong> press <code>⌘⇧M</code> during a recording — or use the menu bar panel — to flag a moment. Flagged moments get their own section in the generated notes.
+            </div>
+          </section>
+        </div>
+
+        <!-- ══════════════ CALENDAR ══════════════ -->
+        <div class="pane" id="pane-calendar">
+          <div class="pane-head">
+            <h1>Calendar</h1>
+            <p>Surface meetings before they start, and record them with the details already filled in.</p>
+          </div>
+
+          <section class="section">
+            <h2>Calendar Suggestions</h2>
+
+            <div class="form-group">
+              <label class="checkbox-label">
+                <input type="checkbox" id="calendar-suggestions-enabled">
+                <span>
+                  Suggest meetings from macOS Calendar
+                  <small>Shows a banner before each meeting starts and enriches the in-meeting banner with title and attendees</small>
+                </span>
+              </label>
+            </div>
+
+            <div class="form-group">
+              <label class="checkbox-label">
+                <input type="checkbox" id="calendar-auto-template-enabled">
+                <span>
+                  Auto-template calendar meetings (1-click confirm)
+                  <small>When a calendar meeting is detected, the banner offers a single “Record” button that starts recording with the title, attendees, and agenda already filled in — no typing. A structured note skeleton is written alongside the recording.</small>
+                </span>
+              </label>
+            </div>
+
+            <div class="form-group">
+              <label for="calendar-lead-time">
+                Lead time before meeting (minutes)
+                <small>How early to surface the banner before a calendar event starts (0–15)</small>
+              </label>
+              <div class="input-with-slider">
+                <input type="number" id="calendar-lead-time" min="0" max="15" step="1" style="width: 80px;">
+                <span id="calendar-lead-time-suffix">minutes</span>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label for="calendar-denylist">
+                Title denylist
+                <small>One pattern per line — events whose title contains any pattern (case-insensitive) are skipped</small>
+              </label>
+              <textarea id="calendar-denylist" rows="6" placeholder="Lunch&#10;Gym&#10;Focus&#10;Block&#10;OOO&#10;Holiday"></textarea>
+            </div>
+
+            <div class="form-group" id="calendar-permission-row">
+              <label>
+                Calendar Access
+                <small id="calendar-permission-status">Status: not determined</small>
+              </label>
+              <div class="input-with-button">
+                <button class="btn btn-secondary" id="btn-calendar-request">Request access</button>
+                <button class="btn btn-secondary" id="btn-calendar-privacy" style="display: none;">Open Privacy &amp; Security</button>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <button class="btn btn-secondary" id="btn-calendar-gmail" disabled title="Coming in a future release">Connect Gmail / Google Calendar (coming soon)</button>
+            </div>
+
+            <div class="info-notice">
+              Calendar data is queried locally via macOS EventKit and never leaves your machine.
+            </div>
+          </section>
+        </div>
+
+        <!-- ══════════════ NOTES & FILING ══════════════ -->
+        <div class="pane" id="pane-notes">
+          <div class="pane-head">
+            <h1>Notes &amp; filing</h1>
+            <p>What happens after you stop: transcription, summarisation, and where the note lands.</p>
+          </div>
+
+          <section class="section">
+            <h2>AI provider</h2>
+
+            <div class="form-group">
+              <label for="llm-provider">
+                Summarisation provider
+                <small>Which AI writes the summary and chooses the vault folder. Recording and transcription are always local — this is the only step that can leave your machine.</small>
+              </label>
+              <select id="llm-provider" class="select-input"></select>
+              <small id="llm-provider-status" class="field-note"></small>
+            </div>
+
+            <div class="form-group">
+              <label class="checkbox-label">
+                <input type="checkbox" id="llm-provider-strict">
+                <span>
+                  Only use the selected provider
+                  <small>Off by default, so a provider that fails or runs out of quota falls back to the others and you still get a summary. Turn on to guarantee the transcript never reaches a provider you didn't choose.</small>
+                </span>
+              </label>
+            </div>
+
+            <div class="form-group">
+              <label>
+                Models
+                <small>Leave blank to use each provider's default. Set one if your plan doesn't include the default model.</small>
+              </label>
+              <div id="llm-models-rows"></div>
+            </div>
+          </section>
+
+          <section class="section">
+            <h2>Processing</h2>
+
+            <div class="form-group">
+              <label class="checkbox-label">
+                <input type="checkbox" id="auto-process">
+                <span>
+                  Auto-process recordings
+                  <small>Automatically transcribe and generate notes after recording</small>
+                </span>
+              </label>
+            </div>
+
+            <div class="form-group">
+              <label for="vault-directory">
+                Obsidian Vault
+                <small>Where finished notes are exported. Detected from Obsidian on first launch — leave empty to keep notes in the recordings folder only.</small>
+              </label>
+              <div class="input-with-button">
+                <input type="text" id="vault-directory" placeholder="No vault set — notes stay local" readonly>
+                <button class="btn btn-secondary" id="btn-change-vault">Change</button>
+                <button class="btn btn-secondary" id="btn-detect-vault" title="Look for a vault Obsidian already knows about">Detect</button>
+                <button class="btn btn-secondary" id="btn-clear-vault" title="Stop exporting notes to a vault">Clear</button>
+              </div>
+              <small id="vault-status" class="field-note"></small>
+            </div>
+
+            <div class="form-group">
+              <label class="checkbox-label">
+                <input type="checkbox" id="slide-capture-enabled">
+                <span>
+                  Capture slides shown during meetings
+                  <small>Keeps a still image each time the shared screen settles, reads the text off it, and picks up the names the meeting app displays. Captures only the single window the meeting audio is coming from &mdash; never your whole screen &mdash; and captures nothing at all if it cannot identify that window.</small>
+                </span>
+              </label>
+            </div>
+
+            <div class="form-group">
+              <label class="checkbox-label">
+                <input type="checkbox" id="call-capture-enabled">
+                <span>
+                  Record the other side of phone and FaceTime calls
+                  <small>iPhone calls answered on this Mac and FaceTime calls are played by macOS itself, which the normal system-audio capture cannot hear. This listens to the call process only while a call is playing &mdash; Zoom, Meet and other meetings are never touched. Turning it on asks macOS for System Audio Recording once, now rather than mid-call.</small>
+                </span>
+              </label>
+            </div>
+
+            <div class="form-group">
+              <label class="checkbox-label">
+                <input type="checkbox" id="vault-auto-filing-enabled">
+                <span>
+                  Auto-file notes into matching vault folders
+                  <small>Routes each exported note into the right client/project folder. Notes that can't be placed go to Inbox with a quick prompt; turning this off exports flat to the vault root as before.</small>
+                </span>
+              </label>
+            </div>
+
+            <div class="info-notice">
+              Meeting summaries are also exported to the Obsidian vault above and filed into the matching project folder (e.g. client meetings, venture calls). Unplaceable notes land in <code>Inbox/</code> with a triage prompt.
+            </div>
+          </section>
+
+          <section class="section">
+            <h2>Files</h2>
+
+            <div class="form-group">
+              <label for="output-directory">
+                Output Directory
+                <small>Where recordings and internal processing files are saved</small>
+              </label>
+              <div class="input-with-button">
+                <input type="text" id="output-directory" readonly>
+                <button class="btn btn-secondary" id="btn-change-dir">Change</button>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label for="retention-days">
+                Retention Period
+                <small>WAV files older than this will be deleted automatically</small>
+              </label>
+              <div class="input-with-slider">
+                <input type="range" id="retention-days" min="1" max="30" step="1">
+                <span id="retention-days-value">7 days</span>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <!-- ══════════════ RECORDINGS ══════════════ -->
+        <div class="pane" id="pane-recordings">
+          <div class="pane-head">
+            <h1>Recordings</h1>
+            <p>Everything captured on this Mac, with its transcript and generated notes.</p>
+          </div>
+
+          <section class="section">
+            <div class="section-header">
+              <h2>Sessions</h2>
+              <button class="btn btn-secondary" id="btn-refresh-list">Refresh</button>
+            </div>
+
+            <div class="recordings-list" id="recordings-list">
+              <div class="loading">Loading recordings...</div>
+            </div>
+          </section>
+        </div>
+
+        <!-- ══════════════ STORAGE ══════════════ -->
+        <div class="pane" id="pane-storage">
+          <div class="pane-head">
+            <h1>Storage</h1>
+            <p>Disk used by audio and generated output, and the cleanup controls.</p>
+          </div>
+
+          <section class="section">
+            <div class="section-header">
+              <h2>Usage</h2>
+              <button class="btn btn-secondary" id="btn-cleanup">Cleanup</button>
+            </div>
+
+            <div class="storage-stats">
+              <div class="stat-item">
+                <span class="stat-label">Total</span>
+                <span class="stat-value" id="stat-total-size">-</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-label">Audio</span>
+                <span class="stat-value" id="stat-audio-size">-</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-label">AI Output</span>
+                <span class="stat-value" id="stat-generated-size">-</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-label">Recordings</span>
+                <span class="stat-value" id="stat-recordings">-</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-label">Transcripts</span>
+                <span class="stat-value" id="stat-transcripts">-</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-label">Notes</span>
+                <span class="stat-value" id="stat-notes">-</span>
+              </div>
+            </div>
+
+            <button class="btn btn-secondary" id="btn-open-output">Open Output Folder</button>
+          </section>
+        </div>
+
+        <div class="pane" id="pane-appearance">
+          <div class="pane-head">
+            <h1>Appearance</h1>
+            <p>How much of the desktop shows through CXNotes' windows.</p>
+          </div>
+
+          <section class="section">
+            <h2>Window transparency</h2>
+            <div class="form-group">
+              <label for="window-transparency">
+                Glass
+                <small>Every window sits on a real macOS blur, so this is a dial rather than a fixed choice — how much looks right depends on the wallpaper behind it. Drag to preview live; Save keeps it.</small>
+              </label>
+              <div class="slider-row">
+                <span class="slider-end">Solid</span>
+                <input type="range" class="cx-slider" id="window-transparency"
+                       min="0" max="1" step="0.01" value="0.38">
+                <span class="slider-end">Glass</span>
+              </div>
+              <p class="field-note" id="transparency-note">Panels stay readable at any setting; the sidebar and the panel's header run thinner than the content on purpose.</p>
+            </div>
+          </section>
+        </div>
+      </main>
+
+      <!-- Footer -->
+      <footer>
+        <div class="footer-content">
+          <span id="version">v1.0.0</span>
+          <div class="footer-buttons">
+            <button class="btn btn-secondary" id="btn-reset-settings">Reset</button>
+            <button class="btn btn-primary" id="btn-save">Save Changes</button>
+          </div>
+        </div>
+      </footer>
+    </div>
+  </div>
+
+  <!-- Processing Overlay -->
+  <div id="processing-overlay" class="overlay hidden">
+    <div class="overlay-content">
+      <div class="spinner"></div>
+      <h3 id="processing-stage">Processing...</h3>
+      <p id="processing-message">Please wait...</p>
+      <div class="progress-bar">
+        <div class="progress-fill" id="progress-fill"></div>
+      </div>
+      <span id="processing-percent">0%</span>
+    </div>
+  </div>
+
+  <!-- Toast Notifications Container -->
+  <div id="toast-container" class="toast-container"></div>
+
+  <script src="presenters.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

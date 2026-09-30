@@ -1,0 +1,71 @@
+# Dependencies
+node_modules/
+
+# Electron build output
+dist/
+out/
+build/
+
+# Recording data (do not commit)
+recordings/
+processed/
+temp/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# Environment
+.env
+.env.local
+
+# Whisper models (large files)
+models/*.bin
+
+# Testing
+coverage/
+.nyc_output/
+
+# Development notes & nested repos
+_devnotes/
+whisper.cpp/
+
+# Tool configs
+.serena/
+.claude/settings.local.json
+.claude/worktrees/
+
+# Swift build artifacts
+native/*/.build/
+
+# Random
+.history
+CLAUDE.md
+AGENTS.md
+postideas.md
+
+# Generated icon artefact (regenerate: python3 scripts/make-icon.py)
+assets/icon.icns
+
+# Python
+__pycache__/
+*.pyc
+
+# Local-only working notes (not for the public remote)
+docs/private/
+
+# Playwright MCP scratch output (screenshots, snapshots, console logs)
+.playwright-mcp/

@@ -1,0 +1,1412 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <!-- img-src is required for the app mark in the header: default-src 'none'
+       blocks it, and a CSP-blocked image fails silently as a missing box. -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self';">
+  <title>CXNotes</title>
+  <style>
+    /*
+     * Menu-bar panel — the popover hanging off the tray icon.
+     * Two states in one window: idle (what's next, what got filed) and
+     * recording (timer, live track health, markers). Everything shown here is
+     * real main-process state; nothing is simulated.
+     */
+    :root {
+      /* ── glass ──────────────────────────────────────────────
+         The window sits on a native NSVisualEffectView (main.js GLASS.popover),
+         so the blur here is real — it sees the desktop behind the WINDOW, which
+         backdrop-filter never could. These three alphas are the other half of
+         that pair, stamped onto <html> as an inline style by main's applyGlass.
+
+         The values below are only the pre-push fallback, and they are OPAQUE on
+         purpose: the very first paint can precede the push, and a window that
+         flashes solid is far better than one that flashes as bare vibrancy with
+         floating text.
+
+         Surfaces are RGB TRIPLETS, not colours, because each is consumed as
+         `rgb(var(--x) / var(--alpha-y))` — pre-multiplying the alpha in would
+         break every one of those slots. */
+      --alpha-pane: 1;
+      --alpha-chrome: 1;
+      --alpha-card: 1;
+
+      /* Chrome is LIGHTER than the pane, and that inversion is the whole
+         character: header and footer read as chrome laid over the work rather
+         than as gutters cut out of it. It also survives transparency far
+         better — a surface darker than its neighbour stops looking like a
+         surface at any real alpha and starts looking like a hole punched
+         through to the wallpaper.
+
+         SPACE-separated, never comma-separated: a comma list expands to
+         `rgb(30, 28, 25 / 0.7)`, which mixes legacy commas with slash-alpha
+         and is invalid — and an invalid background paints NOTHING rather than
+         falling back, so it reads as a very glassy panel instead of as a
+         mistake. It survives a screenshot review; only a computed-style read
+         catches it. */
+      --surface-pane: 30 28 25;
+      --surface-chrome: 46 43 38;
+      --surface-card: 26 24 21;
+
+      --accent: rgb(10, 132, 255);
+      --accent-hover: rgb(8, 106, 204);
+      --accent-soft: rgba(10, 132, 255, 0.12);
+      --accent-strong: rgba(10, 132, 255, 0.24);
+
+      /* Lifted from the flat-panel values. Muted greys that read fine against a
+         solid charcoal lose against the same charcoal at 0.7 over a bright
+         wallpaper — the contrast is now with whatever is behind the window, not
+         with a colour we control. The subtle step moved furthest because it
+         carries the vault paths, which are the smallest text here. */
+      --text-primary: rgb(255, 255, 255);
+      --text-secondary: rgb(222, 220, 217);
+      --text-muted: rgb(182, 179, 175);
+      --text-subtle: rgb(150, 147, 143);
+
+      --border: rgba(255, 255, 255, 0.12);
+      --border-subtle: rgba(255, 255, 255, 0.08);
+
+      --success: rgb(143, 179, 136);
+      --warning: rgb(212, 168, 90);
+      --danger: rgb(212, 118, 106);
+
+      /* Sampled from the red disc in assets/icon.png, so the record button and
+         the app mark beside it are literally the same red. Deliberately NOT
+         --danger: that one is the muted terracotta this panel uses for things
+         that went wrong (stalled tracks, poisoned notes, Stop & process), and a
+         record button is not a warning. Keeping them distinct is what stops the
+         start and stop buttons reading as the same control. */
+      --record: rgb(229, 72, 77);
+
+      --mono: "SF Mono", ui-monospace, Menlo, monospace;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    html, body {
+      width: 100%;
+      background: transparent;
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+      font-size: 13px;
+      line-height: 1.5;
+      color: var(--text-primary);
+      -webkit-font-smoothing: antialiased;
+      -webkit-user-select: none;
+      user-select: none;
+      overflow: hidden;
+    }
+
+    /* The popover shell. The WINDOW is the popover now — macOS rounds it and
+       draws its shadow, and clips the vibrancy material to those corners. The
+       old 8px margin existed so the card could own its own radius and shadow;
+       kept, it would have framed the card in a rectangular blurred slab.
+
+       It paints NO background of its own. That is the trap this whole layout
+       has to avoid: a shell background would sit under every pane, so each
+       pane's alpha would composite over THAT instead of over the material, and
+       turning one down would move it toward the shell's colour rather than
+       toward the desktop — which reads as the transparency setting doing
+       nothing at all. Each pane paints its own; the shell paints none. */
+    .pop {
+      position: relative;
+      background: transparent;
+      border-radius: 11px;
+      overflow: hidden;
+      /* The shell fills the WINDOW rather than hugging its content. Main
+         clamps the height the panel asks for (PANEL_MAX_HEIGHT), so anything
+         taller than that used to be simply cut off by the window edge — a
+         calendar invite carrying ~200 addresses pushed the tracks, the markers
+         and the Stop button below the bottom of the screen, where no amount of
+         wanting could reach them. Filling the window instead lets .body take
+         the leftover space and scroll. syncHeight therefore measures the
+         CONTENT (head + body scrollHeight + foot), never this element, which
+         is now always exactly the window height. */
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      /* An INSET ring rather than a border: a border would add 2px to the
+         measured height that syncHeight reports, and the window is sized from
+         that measurement — so the panel would grow by 2px on every render. */
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+    }
+
+    /* ── header ── */
+    .head {
+      display: flex;
+      flex: 0 0 auto;
+      align-items: center;
+      gap: 8px;
+      padding: 11px 14px 10px;
+      /* Note the alphas are swapped relative to the settings window, and that
+         is deliberate. There, chrome is a tall column BESIDE the work and reads
+         lighter by being thinner. Here it is two thin bars FRAMING a small
+         floating surface — a popover's field is the glassy part and its bars
+         are the frame, which is how AppKit's own menus read. Running the bars
+         thin instead makes them dissolve into the wallpaper and the popover
+         loses its edges. */
+      background: rgb(var(--surface-chrome) / var(--alpha-pane));
+      border-bottom: 1px solid var(--border-subtle);
+      -webkit-app-region: drag;
+    }
+    /* The real app icon, not a stand-in. It carries its own rounded square and
+       ~19% of transparent padding (measured: the opaque square spans 81% of the
+       canvas), so it is sized 24px to land the visible mark at ~19px — matching
+       the 20px placeholder it replaced — and paints no background or radius of
+       its own, which would double the ones already in the artwork. */
+    .mark {
+      width: 24px; height: 24px;
+      flex-shrink: 0;
+      -webkit-user-drag: none;
+    }
+    .head b { font-size: 12.5px; font-weight: 600; }
+    .head .state {
+      margin-left: auto;
+      display: flex; align-items: center; gap: 5px;
+      font-size: 11px; color: var(--text-muted);
+    }
+
+    /* ── body ── */
+    .body {
+      padding: 12px 14px;
+      display: flex;
+      flex-direction: column;
+      /* min-height:0 is what actually makes this scroll: without it a flex
+         item refuses to shrink below its content and the overflow lands back
+         on the window, which cannot scroll. */
+      flex: 1 1 auto;
+      min-height: 0;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      /* The thin one — this is the surface you actually see the desktop
+         through, and the reason the popover reads as glass rather than as a
+         dark slab with a blurred edge. It carries almost no small text
+         directly; the rows that do sit in cards, which are dense. */
+      background: rgb(var(--surface-pane) / var(--alpha-chrome));
+    }
+    /* The stack itself. It exists so syncHeight has something whose height is
+       the CONTENT's: .body is stretched to fill the window, so measuring it
+       would report the size main already set and the panel could never shrink
+       back after a long meeting ended. flex-grow stays 0 here on purpose. */
+    .body-inner {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .sec {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 4px;
+    }
+    .eyebrow {
+      font-size: 10px; font-weight: 600;
+      letter-spacing: 0.1em; text-transform: uppercase;
+      color: var(--text-subtle);
+    }
+
+    /* ── shared atoms ── */
+    .dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
+    .dot.ok { background: var(--success); }
+    .dot.warn { background: var(--warning); }
+    .dot.bad { background: var(--danger); }
+    .dot.rec { background: var(--danger); animation: pulse 1.4s ease-in-out infinite; }
+
+    /* Retry action on a note whose summary is really a provider error */
+    .redo {
+      flex-shrink: 0;
+      font: inherit;
+      font-size: 11px;
+      padding: 3px 9px;
+      border-radius: 6px;
+      border: 1px solid var(--danger);
+      background: transparent;
+      color: var(--danger);
+      cursor: pointer;
+    }
+    .redo:hover:not(:disabled) { background: var(--danger); color: #fff; }
+    .redo:disabled { opacity: 0.5; cursor: default; }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(212, 118, 106, 0.45); }
+      50% { opacity: 0.72; box-shadow: 0 0 0 5px rgba(212, 118, 106, 0); }
+    }
+
+    /* A translucent white wash over glass is nearly invisible — it lightens the
+       wallpaper rather than establishing a surface. Chips get their own dark
+       fill so the label has something to sit on at any dial position. */
+    .chip {
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 1px 6px; border-radius: 4px;
+      font-family: var(--mono); font-size: 10px;
+      border: 1px solid var(--border);
+      background: rgb(var(--surface-card) / 0.55);
+      color: var(--text-muted);
+      white-space: nowrap;
+    }
+    .chip.accent { border-color: var(--accent-strong); background: var(--accent-soft); color: var(--accent); }
+    .chip.ok { border-color: rgba(143, 179, 136, 0.32); background: rgba(143, 179, 136, 0.12); color: var(--success); }
+    .chip.warn { border-color: rgba(212, 168, 90, 0.32); background: rgba(212, 168, 90, 0.12); color: var(--warning); }
+    .chip.bad { border-color: rgba(212, 118, 106, 0.35); background: rgba(212, 118, 106, 0.12); color: var(--danger); }
+
+    button {
+      appearance: none; font: inherit; cursor: pointer;
+      font-size: 12px; font-weight: 500;
+      padding: 6px 14px; border-radius: 8px;
+      border: 1px solid var(--border);
+      background: rgba(255, 255, 255, 0.07);
+      color: var(--text-primary);
+      transition: background 140ms ease;
+      -webkit-app-region: no-drag;
+    }
+    button:hover:not(:disabled) { background: rgba(255, 255, 255, 0.13); }
+    button:disabled { opacity: 0.45; cursor: default; }
+    button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+    button.primary:hover:not(:disabled) { background: var(--accent-hover); }
+    button.danger { background: var(--danger); border-color: var(--danger); color: rgb(38, 18, 15); font-weight: 600; }
+    button.danger:hover:not(:disabled) { background: rgb(198, 104, 92); }
+
+    /* ── the record button ──────────────────────────────────────────────
+       A camera viewfinder rather than a coloured slab: four corner brackets,
+       a red disc and the REC wordmark. It is deliberately the ONE control in
+       this panel that is nearly all glass — the brackets and the disc carry
+       it, so the button reads as an instrument aimed at the meeting rather
+       than as another filled button in a stack of them. Designed in
+       mocks/rec-button.html (variant C). */
+    button.rec-btn {
+      position: relative;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 2px;
+      /* Sized to sit level with the other rows (~46px). The arms shrink with
+         it: an 18px arm on a 46px button is more than a third of its height
+         and the brackets stop reading as corners. */
+      --inset: 5px; --arm: 13px;
+      padding: 8px 18px 9px;
+      border: 0;
+      border-radius: 12px;
+      background: rgb(var(--surface-card) / 0.2);
+      transition: background 160ms ease;
+    }
+    button.rec-btn:hover:not(:disabled) {
+      --inset: 4px;
+      background:
+        radial-gradient(120% 140% at 50% 0%, rgba(229, 72, 77, 0.22), transparent 70%),
+        rgb(var(--surface-card) / 0.34);
+    }
+    button.rec-btn:hover:not(:disabled) .br { --bracket: var(--record); }
+    button.rec-btn:hover:not(:disabled) .cap { color: var(--text-secondary); }
+    button.rec-btn:hover:not(:disabled) .reddot { animation: breathe 1.5s ease-in-out infinite; }
+
+    /* The four brackets. Corner ARMS, never a closed border — the gap between
+       them is the camera-framing read, and closing it turns the mark back into
+       an ordinary outlined button. Note the transition names top/right/bottom/
+       left rather than the --inset that feeds them: a custom property is not
+       interpolated, so transitioning the variable animates nothing. */
+    .br {
+      position: absolute;
+      width: var(--arm); height: var(--arm);
+      border: 0 solid var(--bracket, rgba(255, 255, 255, 0.4));
+      pointer-events: none;
+      transition: border-color 160ms ease,
+                  top 200ms cubic-bezier(0.2, 0.9, 0.3, 1),
+                  right 200ms cubic-bezier(0.2, 0.9, 0.3, 1),
+                  bottom 200ms cubic-bezier(0.2, 0.9, 0.3, 1),
+                  left 200ms cubic-bezier(0.2, 0.9, 0.3, 1);
+    }
+    .br.tl { top: var(--inset); left: var(--inset);
+             border-top-width: 2px; border-left-width: 2px; border-top-left-radius: 5px; }
+    .br.tr { top: var(--inset); right: var(--inset);
+             border-top-width: 2px; border-right-width: 2px; border-top-right-radius: 5px; }
+    .br.bl { bottom: var(--inset); left: var(--inset);
+             border-bottom-width: 2px; border-left-width: 2px; border-bottom-left-radius: 5px; }
+    .br.br2 { bottom: var(--inset); right: var(--inset);
+              border-bottom-width: 2px; border-right-width: 2px; border-bottom-right-radius: 5px; }
+
+    .rec-btn .lockup { display: flex; align-items: center; gap: 9px; }
+    .rec-btn .reddot {
+      width: 12px; height: 12px; border-radius: 50%;
+      background: var(--record);
+      flex-shrink: 0;
+      /* The glow is what keeps a saturated red legible on glass rather than on
+         a solid fill — without it the disc loses its edge against a bright
+         wallpaper showing through. */
+      box-shadow: 0 0 0 0.5px rgba(255, 255, 255, 0.22), 0 0 12px rgba(229, 72, 77, 0.55);
+    }
+    .rec-btn .wordmark {
+      font-size: 16px; line-height: 1;
+      font-weight: 800; letter-spacing: 0.06em;
+    }
+    /* One step up from --text-subtle, which is where this started. At 9.5px on
+       a 0.2-alpha fill this is the least-supported text in the panel — it has
+       almost no surface under it, so it competes directly with whatever
+       wallpaper is showing through. Measured against bright glass, subtle
+       disappeared; muted holds. */
+    .rec-btn .cap {
+      font-size: 9.5px; font-weight: 600;
+      letter-spacing: 0.08em; text-transform: uppercase;
+      color: var(--text-muted);
+      transition: color 160ms ease;
+    }
+    /* System-only mode is the one thing this caption MUST still shout — it
+       warns that the microphone is not being recorded, and at 9.5px in the
+       subtle grey it would be the quietest text in the panel. */
+    .rec-btn .cap.warn { color: var(--warning); }
+    @keyframes breathe {
+      0%, 100% { box-shadow: 0 0 0 0.5px rgba(255, 255, 255, 0.22), 0 0 12px rgba(229, 72, 77, 0.55); }
+      50%      { box-shadow: 0 0 0 0.5px rgba(255, 255, 255, 0.3),  0 0 20px rgba(229, 72, 77, 0.9); }
+    }
+    button.sm { padding: 4px 10px; font-size: 11px; }
+    button.wide { width: 100%; }
+
+    /* A card lies ON the body, so it runs DENSER than the pane it rests on
+       (--alpha-card is derived to stay above --alpha-pane at every dial
+       position). Darker as well as denser, so it reads as a well cut into the
+       surface rather than a second sheet of glass stacked on the first. */
+    .card {
+      border: 1px solid var(--border-subtle);
+      border-radius: 10px;
+      background: rgb(var(--surface-card) / var(--alpha-card));
+      padding: 11px 12px;
+    }
+    /* The tinted cards layer their accent over the same card base rather than
+       fading to a fixed rgba black — a hard-coded stop would stay put while the
+       card beneath it moved with the dial, and the gradient would visibly
+       detach from its own card at the glassy end. */
+    .card.next {
+      border-color: var(--accent-strong);
+      background:
+        linear-gradient(180deg, rgba(10, 132, 255, 0.16), rgba(10, 132, 255, 0) 70%),
+        rgb(var(--surface-card) / var(--alpha-card));
+    }
+    .card.rec {
+      border-color: rgba(212, 118, 106, 0.4);
+      background:
+        linear-gradient(180deg, rgba(212, 118, 106, 0.17), rgba(212, 118, 106, 0) 70%),
+        rgb(var(--surface-card) / var(--alpha-card));
+    }
+
+    /* ── list rows ── */
+    .list { display: flex; flex-direction: column; }
+    .row {
+      display: flex; align-items: center; gap: 9px;
+      padding: 7px 8px; margin: 0 -8px;
+      border-radius: 8px;
+      -webkit-app-region: no-drag;
+    }
+    .row.click { cursor: pointer; }
+    .row.click:hover { background: rgba(255, 255, 255, 0.07); }
+    .row time {
+      font-family: var(--mono); font-size: 10.5px;
+      color: var(--text-subtle); width: 56px; flex-shrink: 0;
+    }
+    .row .t { flex: 1; min-width: 0; }
+    .row .t b {
+      display: block; font-size: 12px; font-weight: 500;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .row .t small {
+      display: block; font-size: 10.5px; color: var(--text-subtle);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .row .go { color: var(--text-subtle); opacity: 0; flex-shrink: 0; }
+    .row.click:hover .go { opacity: 1; }
+
+    .empty {
+      font-size: 11.5px; color: var(--text-subtle);
+      padding: 4px 0 2px;
+    }
+
+    /* ── next meeting ── */
+    .when { display: flex; align-items: baseline; gap: 7px; margin-bottom: 3px; }
+    .when b { font-size: 13px; font-weight: 600; }
+    .when span { font-size: 11px; color: var(--accent); }
+    /* Two lines of title, then an ellipsis. Meeting titles arrive from a
+       calendar and are not written to fit a popover. */
+    .card h4 {
+      font-size: 13px; font-weight: 600; line-height: 1.3;
+      display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+      overflow: hidden;
+    }
+
+    /* Attendees are CONTEXT, not content. An invite sent to a mailing list
+       carries hundreds of addresses, and rendered in full they bury everything
+       worth acting on. Collapsed to the first few by default
+       (panelPresenters.summariseParticipants); the full list is one click away
+       and scrolls in its OWN box rather than stretching the popover. */
+    .card .who { font-size: 11px; color: var(--text-muted); margin: 2px 0 9px; }
+    .card .who .who-text { overflow-wrap: anywhere; }
+    .card .who.open .who-text {
+      display: block;
+      max-height: 128px;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      -webkit-app-region: no-drag;
+    }
+    /* Beats the global button rules on specificity rather than with
+       !important — including the hover, which is (0,2,1) and would otherwise
+       outrank a bare .who-more:hover. */
+    button.who-more {
+      display: inline; margin-left: 4px; padding: 0;
+      border: 0; background: transparent;
+      font: inherit; font-size: 11px; font-weight: 500;
+      color: var(--accent);
+    }
+    button.who-more:hover:not(:disabled) { background: transparent; text-decoration: underline; }
+    /* An author `display` beats the UA's `[hidden] { display: none }` outright
+       — author rules win over UA rules regardless of specificity — so an
+       element styled `display: …` has to opt back in by hand or the `hidden`
+       property does nothing at all. */
+    button.who-more[hidden] { display: none; }
+    .meta { display: flex; gap: 5px; flex-wrap: wrap; margin-bottom: 10px; }
+    .acts { display: flex; gap: 6px; }
+    .acts button { flex: 1; }
+    .acts button.grow0 { flex: 0 0 auto; }
+
+    /* ── recording ── */
+    .rec-top { display: flex; align-items: center; gap: 9px; margin-bottom: 6px; }
+    .rec-top .lab {
+      display: flex; align-items: center; gap: 6px;
+      font-size: 11px; font-weight: 600; letter-spacing: 0.06em;
+      color: var(--danger);
+    }
+    .timer {
+      margin-left: auto;
+      font-family: var(--mono); font-size: 22px; font-weight: 600;
+      letter-spacing: 0.01em; font-variant-numeric: tabular-nums;
+    }
+
+    .tracks { display: flex; flex-direction: column; gap: 7px; margin: 10px 0; }
+    .track { display: flex; align-items: center; gap: 9px; }
+    .track .name {
+      font-size: 10.5px; color: var(--text-muted);
+      width: 46px; flex-shrink: 0;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    /* Live level history: one bar per poll, oldest on the left. Real RMS data
+       from the same LevelMonitor the silence watcher uses — not decoration. */
+    .hist {
+      flex: 1; display: flex; align-items: flex-end; gap: 1.5px;
+      height: 22px; min-width: 0;
+    }
+    .hist i {
+      flex: 1; min-width: 0;
+      background: var(--accent);
+      border-radius: 1.5px;
+      height: 6%;
+      transition: height 120ms linear;
+    }
+    .hist.mic i { background: var(--success); }
+    .hist.stalled i { background: rgba(212, 118, 106, 0.55); }
+    .track .health { flex-shrink: 0; }
+
+    .watch {
+      display: flex; align-items: center; gap: 6px;
+      font-size: 10.5px; color: var(--text-subtle);
+      margin-top: 9px;
+    }
+
+    /* The one thing in this panel allowed to shout. Opaque rather than
+       alpha-tinted: a warning that dissolves into the wallpaper at high
+       transparency defeats itself (invariant #18 governs the panes, not this). */
+    .no-audio {
+      display: flex; flex-direction: column; gap: 3px;
+      margin: 9px 0 2px;
+      padding: 8px 10px;
+      border-radius: 7px;
+      background: rgb(74 32 28);
+      border: 1px solid rgb(150 68 58);
+      font-size: 10.5px; line-height: 1.35;
+      color: rgb(255 226 220);
+    }
+    /* Same trap as .who-more: without this the red "No system audio" warning
+       was shown on EVERY recording, because `display: flex` above outranks the
+       UA rule behind the `hidden` property the renderer sets. A warning that
+       is always on is a warning nobody reads — see invariant #23 on false
+       alarms discrediting the true ones. */
+    .no-audio[hidden] { display: none; }
+    .no-audio strong { font-size: 11px; font-weight: 600; }
+    .no-audio span { color: rgb(240 198 190); }
+
+    /* ── markers ── */
+    .marker-input {
+      display: flex; gap: 6px; margin-bottom: 2px;
+    }
+    /* Deliberately NOT dial-driven. A field you type into has to stay readable
+       at every slider position, and it is small enough that pinning it costs
+       nothing visually — the same call cxtasks makes for inputs and menus. */
+    .marker-input input {
+      flex: 1; min-width: 0;
+      font: inherit; font-size: 12px;
+      padding: 5px 9px; border-radius: 8px;
+      border: 1px solid var(--border);
+      background: rgb(var(--surface-card) / 0.88);
+      color: var(--text-primary);
+      -webkit-app-region: no-drag;
+      -webkit-user-select: text;
+      user-select: text;
+    }
+    .marker-input input::placeholder { color: var(--text-subtle); }
+    .marker-input input:focus {
+      outline: none;
+      border-color: var(--accent-strong);
+      background: rgb(var(--surface-card) / 0.96);
+    }
+    .marker-row {
+      display: flex; align-items: baseline; gap: 9px;
+      padding: 3px 0; font-size: 11.5px;
+    }
+    .marker-row time {
+      font-family: var(--mono); font-size: 10.5px;
+      color: var(--warning); flex-shrink: 0;
+    }
+    .marker-row span {
+      color: var(--text-secondary);
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+
+    /* ── footer ── */
+    .foot {
+      display: flex; flex: 0 0 auto; align-items: center; gap: 8px;
+      padding: 8px 12px 9px;
+      border-top: 1px solid var(--border-subtle);
+      background: rgb(var(--surface-chrome) / var(--alpha-pane)); /* frame — see .head */
+      font-size: 10.5px; color: var(--text-muted);
+    }
+    .foot .icons { margin-left: auto; display: flex; gap: 2px; }
+    .foot .icons button {
+      padding: 5px; border: 0; background: transparent;
+      color: var(--text-muted); border-radius: 6px;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .foot .icons button:hover { background: rgba(255, 255, 255, 0.1); color: var(--text-primary); }
+
+    svg.ic {
+      width: 14px; height: 14px; flex-shrink: 0;
+      stroke: currentColor; fill: none;
+      stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round;
+    }
+    svg.ic.xs { width: 11px; height: 11px; }
+
+    /* ── note context menu ─────────────────────────────────────────────
+       Drawn here rather than popped as a native NSMenu so it carries the
+       app's own surface instead of the system's. Two things the system was
+       doing for free now have to be done by hand: it cannot escape the
+       window, so openMenu() flips and clamps it; and it has no built-in
+       keyboard support, so the arrow keys are wired below.
+
+       DENSE on purpose, and not tied to the transparency dial. Everything
+       else in this panel may thin out as the user pleases, but a menu is
+       read and clicked precisely and lands over arbitrary content — the same
+       reason invariant #18 keeps inputs opaque. */
+    .ctx:focus { outline: none; }
+    .ctx {
+      position: fixed;
+      z-index: 60;
+      min-width: 208px;
+      padding: 5px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: rgb(var(--surface-card) / 0.97);
+      box-shadow: 0 14px 38px rgba(0, 0, 0, 0.5), 0 0 0 0.5px rgba(0, 0, 0, 0.4);
+    }
+    .ctx button {
+      display: block; width: 100%;
+      text-align: left;
+      padding: 5px 9px;
+      border: 0; border-radius: 6px;
+      background: transparent;
+      color: var(--text-secondary);
+      font-size: 12.5px; font-weight: 400;
+      white-space: nowrap;
+    }
+    /* :focus drives the highlight, not :hover alone — that way the arrow keys
+       and the mouse light up the same row, and there is never a moment with
+       two rows looking selected. */
+    .ctx button:enabled:hover,
+    .ctx button:enabled:focus {
+      background: var(--accent);
+      color: #fff;
+      outline: none;
+    }
+    .ctx button.danger-item { color: var(--danger); }
+    .ctx button.danger-item:enabled:hover,
+    .ctx button.danger-item:enabled:focus {
+      background: var(--danger);
+      color: rgb(38, 18, 15);
+    }
+    .ctx button:disabled { color: var(--text-subtle); opacity: 0.5; cursor: default; }
+    .ctx .sep { height: 1px; margin: 5px 8px; background: var(--border-subtle); }
+
+    /* Overlay-style scrollbars: visible enough to grab, quiet enough not to
+       draw a hard edge down the glass. */
+    .body::-webkit-scrollbar,
+    .card .who.open .who-text::-webkit-scrollbar { width: 9px; }
+    .body::-webkit-scrollbar-track,
+    .card .who.open .who-text::-webkit-scrollbar-track { background: transparent; }
+    .body::-webkit-scrollbar-thumb,
+    .card .who.open .who-text::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.18);
+      border: 3px solid transparent;
+      background-clip: padding-box;
+      border-radius: 9px;
+    }
+    .body::-webkit-scrollbar-thumb:hover,
+    .card .who.open .who-text::-webkit-scrollbar-thumb:hover {
+      background: rgba(255, 255, 255, 0.3);
+      background-clip: padding-box;
+    }
+
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+  <div class="pop" id="pop">
+    <div class="head">
+      <img class="mark" src="../assets/icon.png" alt="">
+
+      <b>CXNotes</b>
+      <span class="state" id="head-state"><span class="dot ok"></span> <span id="head-state-text">Ready</span></span>
+    </div>
+
+    <div class="body" id="body">
+     <div class="body-inner" id="body-inner">
+      <!-- ══════════ IDLE ══════════ -->
+      <div id="view-idle">
+        <button class="rec-btn wide" id="btn-start" style="margin-bottom:12px">
+          <span class="br tl" aria-hidden="true"></span><span class="br tr" aria-hidden="true"></span>
+          <span class="br bl" aria-hidden="true"></span><span class="br br2" aria-hidden="true"></span>
+          <span class="lockup"><span class="reddot" aria-hidden="true"></span><span class="wordmark">REC</span></span>
+          <span class="cap" id="btn-start-label">Start recording</span>
+        </button>
+
+        <div id="dep-warning" class="card hidden" style="margin-bottom:12px; border-color: rgba(212,118,106,0.35);">
+          <div style="display:flex; align-items:center; gap:7px; margin-bottom:3px;">
+            <span class="dot bad"></span>
+            <b style="font-size:12px">Not ready to record</b>
+          </div>
+          <small id="dep-warning-text" style="font-size:11px; color:var(--text-muted)"></small>
+        </div>
+
+        <!-- next meeting -->
+        <div id="next-wrap" class="hidden" style="margin-bottom:12px">
+          <div class="card next">
+            <div class="when"><b id="next-time">—</b><span id="next-rel"></span></div>
+            <h4 id="next-title">—</h4>
+            <div class="who" id="next-who">
+              <span class="who-text" id="next-who-text"></span><button class="who-more" id="next-who-more" hidden></button><span id="next-who-tail"></span>
+            </div>
+            <div class="meta" id="next-meta"></div>
+            <div class="acts">
+              <button class="primary sm" id="btn-record-next">Record this meeting</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- later today -->
+        <div id="later-wrap" class="hidden" style="margin-bottom:12px">
+          <div class="sec">
+            <span class="eyebrow">Later</span>
+            <span class="chip" id="calendar-source-chip">calendar</span>
+          </div>
+          <div class="list" id="later-list"></div>
+        </div>
+
+        <!-- recent notes -->
+        <div id="notes-wrap">
+          <div class="sec">
+            <span class="eyebrow">Recent notes</span>
+            <span class="chip">vault</span>
+          </div>
+          <div class="list" id="notes-list"></div>
+        </div>
+      </div>
+
+      <!-- ══════════ RECORDING ══════════ -->
+      <div id="view-rec" class="hidden">
+        <div class="card rec">
+          <div class="rec-top">
+            <span class="lab"><span class="dot rec"></span> REC</span>
+            <span class="timer" id="timer">00:00</span>
+          </div>
+          <h4 id="rec-title">Recording</h4>
+          <div class="who" id="rec-who">
+            <span class="who-text" id="rec-who-text"></span><button class="who-more" id="rec-who-more" hidden></button><span id="rec-who-tail"></span>
+          </div>
+
+          <!-- Only shown once the system capture has PROVEN it is recording
+               nothing. Sits above the tracks because it is the one thing worth
+               acting on while the meeting is still happening. -->
+          <div class="no-audio" id="no-audio" hidden>
+            <strong>⚠️ No system audio</strong>
+            <span>Only your microphone is being recorded — the other side of this
+            meeting is not. Check that audio is playing through your output device.</span>
+          </div>
+
+          <div class="tracks" id="tracks"></div>
+
+          <div class="acts">
+            <button class="danger" id="btn-stop">Stop &amp; process</button>
+          </div>
+          <div class="watch" id="watch-line">
+            <svg class="ic xs" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>
+            <span id="watch-text">Transcribes on-device after you stop</span>
+          </div>
+        </div>
+
+        <!-- markers -->
+        <div style="margin-top:12px">
+          <div class="sec">
+            <span class="eyebrow">Markers</span>
+            <span class="chip" id="marker-hint">⌘⇧M</span>
+          </div>
+          <div class="marker-input">
+            <input type="text" id="marker-input" placeholder="Flag this moment…" maxlength="120" autocomplete="off" spellcheck="false">
+            <button class="sm" id="btn-marker">Add</button>
+          </div>
+          <div id="marker-list"></div>
+        </div>
+      </div>
+     </div>
+    </div>
+
+    <div class="foot">
+      <svg class="ic xs" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+      <span>Everything stays on this Mac</span>
+      <span class="icons">
+        <button id="btn-recordings" title="Open recordings folder">
+          <svg class="ic" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 3h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+        </button>
+        <button id="btn-vault" title="Open vault">
+          <svg class="ic" viewBox="0 0 24 24"><path d="M4 5a2 2 0 0 1 2-2h9l5 5v11a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><path d="M14 3v6h6"/></svg>
+        </button>
+        <button id="btn-settings" title="Settings">
+          <svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1v.3a2 2 0 1 1-4 0v-.2a1.6 1.6 0 0 0-2.8-1.1l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.6 1.6 0 0 0 3.5 15H3a2 2 0 1 1 0-4h.2a1.6 1.6 0 0 0 1.1-2.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.6 1.6 0 0 0 9 4.5V4a2 2 0 1 1 4 0v.2a1.6 1.6 0 0 0 2.7 1.1l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0 1.1 2.7h.3a2 2 0 1 1 0 4h-.2a1.6 1.6 0 0 0-1.3.9z"/></svg>
+        </button>
+        <button id="btn-quit" title="Quit CXNotes">
+          <svg class="ic" viewBox="0 0 24 24"><path d="M12 4v8M7.5 7a7 7 0 1 0 9 0"/></svg>
+        </button>
+      </span>
+    </div>
+    <div class="ctx hidden" id="note-menu" role="menu" aria-label="Note actions" tabindex="-1"></div>
+  </div>
+
+  <script src="panelPresenters.js"></script>
+  <script>
+    const api = window.menubarPanel;
+
+    /** Bars of level history per track — 10s at the 250ms push rate. */
+    const HISTORY_BARS = 40;
+    const history = {};       // trackId → number[]
+    const trackEls = {};      // trackId → { row, hist, health }
+    let lastTrackIds = '';    // rebuild the track rows only when the set changes
+    let lastState = null;
+
+    /* ── helpers ── */
+
+    function esc(value) {
+      return String(value == null ? '' : value)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    function formatClock(ms) {
+      const total = Math.max(0, Math.floor((ms || 0) / 1000));
+      const h = Math.floor(total / 3600);
+      const m = Math.floor((total % 3600) / 60);
+      const s = total % 60;
+      const pad = (n) => String(n).padStart(2, '0');
+      return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`;
+    }
+
+    function formatTimeOfDay(iso) {
+      const d = new Date(iso);
+      if (Number.isNaN(d.getTime())) return '';
+      return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    }
+
+    /** "in 25 min" / "now" / "in 3 h" — the relative line under the next meeting. */
+    function formatRelative(iso) {
+      const d = new Date(iso);
+      if (Number.isNaN(d.getTime())) return '';
+      const diffMin = Math.round((d.getTime() - Date.now()) / 60000);
+      if (diffMin <= 0 && diffMin > -60) return 'now';
+      if (diffMin < 0) return '';
+      if (diffMin < 60) return `in ${diffMin} min`;
+      const hours = Math.round(diffMin / 60);
+      return `in ${hours} h`;
+    }
+
+    /** Same-day meetings show a time; anything later shows a weekday. */
+    function formatWhen(iso) {
+      const d = new Date(iso);
+      if (Number.isNaN(d.getTime())) return '';
+      const now = new Date();
+      const sameDay = d.toDateString() === now.toDateString();
+      return sameDay
+        ? d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+        : d.toLocaleDateString([], { weekday: 'short' });
+    }
+
+    const CHEVRON = '<svg class="ic xs go" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg>';
+
+    /* ── rendering ── */
+
+    function renderIdle(state) {
+      const deps = state.deps || {};
+      const blocked = deps.systemAudio === false;
+      const startBtn = document.getElementById('btn-start');
+      startBtn.disabled = blocked;
+      // Only the SYSTEM-ONLY mode is worth naming. Dual is the default and the
+      // mode is chosen in Settings, so saying it here restates something the
+      // user already decided and cannot change from this button. "System only"
+      // stays because it warns of a real consequence: the microphone is not
+      // being recorded.
+      // The CAPTION, not the button — setting textContent on the button itself
+      // would delete the brackets and the REC lockup inside it.
+      const startCap = document.getElementById('btn-start-label');
+      const systemOnly = state.mode !== 'dual';
+      startCap.textContent = systemOnly ? 'Start recording — system only' : 'Start recording';
+      startCap.classList.toggle('warn', systemOnly);
+
+      const warn = document.getElementById('dep-warning');
+      if (blocked) {
+        warn.classList.remove('hidden');
+        document.getElementById('dep-warning-text').textContent =
+          'No system-audio capture available. Grant Screen Recording permission in System Settings.';
+      } else {
+        warn.classList.add('hidden');
+      }
+
+      // Next meeting
+      const upcoming = state.upcoming || [];
+      const nextWrap = document.getElementById('next-wrap');
+      if (upcoming.length) {
+        const next = upcoming[0];
+        nextWrap.classList.remove('hidden');
+        document.getElementById('next-time').textContent = formatTimeOfDay(next.startTime) || 'Soon';
+        document.getElementById('next-rel').textContent = formatRelative(next.startTime);
+        document.getElementById('next-title').textContent = next.title || 'Untitled meeting';
+        renderWho('next', next.who);
+
+        const meta = [];
+        if (next.hasTemplate) meta.push('<span class="chip ok">1-click record</span>');
+        if (next.sourceLabel) meta.push(`<span class="chip accent">${esc(next.sourceLabel)}</span>`);
+        if (next.agendaCount) meta.push(`<span class="chip">agenda · ${next.agendaCount}</span>`);
+        document.getElementById('next-meta').innerHTML = meta.join('');
+
+        document.getElementById('btn-record-next').dataset.fingerprint = next.fingerprint || '';
+        document.getElementById('btn-record-next').disabled = blocked;
+      } else {
+        nextWrap.classList.add('hidden');
+      }
+
+      // Later
+      const later = upcoming.slice(1);
+      const laterWrap = document.getElementById('later-wrap');
+      if (later.length) {
+        laterWrap.classList.remove('hidden');
+        document.getElementById('calendar-source-chip').textContent = state.calendarSource || 'calendar';
+        document.getElementById('later-list').innerHTML = later.map((ev) => `
+          <div class="row click" data-fingerprint="${esc(ev.fingerprint)}">
+            <time>${esc(formatWhen(ev.startTime))}</time>
+            <div class="t">
+              <b>${esc(ev.title || 'Untitled meeting')}</b>
+              <small>${esc(ev.who || '')}</small>
+            </div>
+            ${CHEVRON}
+          </div>`).join('');
+      } else {
+        laterWrap.classList.add('hidden');
+      }
+
+      // Recent notes
+      const notes = state.recentNotes || [];
+      const notesList = document.getElementById('notes-list');
+      if (notes.length) {
+        notesList.innerHTML = notes.map((n) => {
+          // A note that is really a provider limit notice reads as filed and
+          // fine everywhere else — this is where it gets caught and fixed.
+          const failed = !!n.summaryFailed;
+          const dotClass = failed ? 'bad' : (n.needsTriage ? 'warn' : 'ok');
+          const subtitle = failed
+            ? (n.canResummarise ? 'Summary failed — retry' : 'Summary failed — reprocess in Settings')
+            : `${esc(n.destination || 'vault')}${n.when ? ' · ' + esc(n.when) : ''}`;
+          const action = n.canResummarise
+            ? `<button class="redo" data-resummarise="${esc(n.sessionDir)}" title="${esc(n.summaryFailed)}">Retry</button>`
+            : CHEVRON;
+
+          return `
+          <div class="row click" data-open="${esc(n.path)}" data-session="${esc(n.sessionDir || '')}">
+            <span class="dot ${dotClass}"></span>
+            <div class="t">
+              <b>${esc(n.title)}</b>
+              <small>${subtitle}</small>
+            </div>
+            ${action}
+          </div>`;
+        }).join('');
+      } else {
+        notesList.innerHTML = '<div class="empty">No notes yet — your first recording lands here.</div>';
+      }
+    }
+
+    /* ── attendee lines ───────────────────────────────────────────────
+       Whether a line is expanded is pure VIEW state and lives only here — it
+       describes what the reader clicked, not what the app is doing, so it has
+       no business in main (invariant #15 is about actions and recording state,
+       both of which still route through main).
+
+       Keyed by the string it describes: a new meeting collapses again rather
+       than inheriting the last one's expansion. */
+    const whoExpanded = { rec: false, next: false };
+    const whoSource = { rec: null, next: null };
+
+    /**
+     * Render one attendee line: the first few names, a "+N more" toggle when
+     * there are more, and an optional tail that stays outside the expanded
+     * scroll box.
+     */
+    function renderWho(id, participants, tail = '') {
+      const wrap = document.getElementById(`${id}-who`);
+      const textEl = document.getElementById(`${id}-who-text`);
+      const moreEl = document.getElementById(`${id}-who-more`);
+      const tailEl = document.getElementById(`${id}-who-tail`);
+      const raw = participants || '';
+
+      if (whoSource[id] !== raw) {
+        whoSource[id] = raw;
+        whoExpanded[id] = false;
+      }
+
+      const summary = summariseParticipants(raw);
+      const expanded = whoExpanded[id] && summary.truncated;
+
+      textEl.textContent = expanded ? summary.full : summary.preview;
+      wrap.classList.toggle('open', expanded);
+
+      moreEl.hidden = !summary.truncated;
+      moreEl.textContent = expanded ? 'Show fewer' : summary.moreLabel;
+      moreEl.title = expanded ? '' : `${summary.total} attendees`;
+
+      // A separator is only earned when there is something on both sides.
+      tailEl.textContent = tail ? (summary.total || expanded ? ` · ${tail}` : tail) : '';
+    }
+
+    for (const id of ['rec', 'next']) {
+      document.getElementById(`${id}-who-more`).addEventListener('click', (e) => {
+        e.stopPropagation();
+        whoExpanded[id] = !whoExpanded[id];
+        // Re-render from the last state rather than patching the DOM, so the
+        // panel keeps deriving everything it shows from main's snapshot.
+        if (lastState) render(lastState);
+      });
+    }
+
+    function renderRecording(state) {
+      const rec = state.recording || {};
+      document.getElementById('timer').textContent = formatClock(rec.durationMs);
+      document.getElementById('rec-title').textContent = rec.title || 'Recording';
+
+      // Dual is the default and goes unsaid; system-only is the one worth
+      // flagging, because the microphone is not in the recording. It is a TAIL
+      // rather than another bit of the attendee string, so it stays visible
+      // when the attendee list is expanded into its own scrolling box.
+      renderWho('rec', rec.participants, rec.mode !== 'dual' ? 'system only' : '');
+
+      document.getElementById('no-audio').hidden = !rec.systemSignalDead;
+
+      renderTracks(rec.tracks || []);
+      renderMarkers(state.markers || []);
+
+      // Silence watchdog / processing note — honest about what happens next.
+      const watch = document.getElementById('watch-text');
+      if (rec.silence && rec.silence.enabled) {
+        watch.textContent = rec.silence.prompting
+          ? 'Silence detected — auto-stop pending'
+          : `Auto-stops after ${rec.silence.minutes} min of silence`;
+      } else {
+        watch.textContent = 'Transcribes on-device after you stop';
+      }
+    }
+
+    function renderTracks(tracks) {
+      const ids = tracks.map((t) => t.id).join(',');
+      const container = document.getElementById('tracks');
+
+      // Rebuild only when the track set changes; per-poll updates just move bars.
+      if (ids !== lastTrackIds) {
+        lastTrackIds = ids;
+        container.innerHTML = '';
+        for (const key of Object.keys(trackEls)) delete trackEls[key];
+
+        for (const track of tracks) {
+          const row = document.createElement('div');
+          row.className = 'track';
+
+          const name = document.createElement('span');
+          name.className = 'name';
+          name.textContent = track.label || track.id;
+
+          const hist = document.createElement('div');
+          hist.className = 'hist' + (track.id === 'mic' ? ' mic' : '');
+          for (let i = 0; i < HISTORY_BARS; i++) hist.appendChild(document.createElement('i'));
+
+          const health = document.createElement('span');
+          health.className = 'health';
+
+          row.append(name, hist, health);
+          container.appendChild(row);
+          trackEls[track.id] = { row, hist, health };
+          if (!history[track.id]) history[track.id] = new Array(HISTORY_BARS).fill(0);
+        }
+      }
+
+      for (const track of tracks) {
+        const els = trackEls[track.id];
+        if (!els) continue;
+
+        const hist = history[track.id] || (history[track.id] = new Array(HISTORY_BARS).fill(0));
+        hist.push(Math.max(0, Math.min(1, track.level || 0)));
+        while (hist.length > HISTORY_BARS) hist.shift();
+
+        const bars = els.hist.children;
+        for (let i = 0; i < bars.length; i++) {
+          const level = hist[i] || 0;
+          bars[i].style.height = (6 + level * 94).toFixed(1) + '%';
+        }
+
+        // Two independent things can be wrong with a track, and the worse one
+        // is invisible without being told: `health` is whether the file is
+        // GROWING, `signal` is whether what it contains is audio. A zero-filled
+        // capture is health:'live', signal:'silent' — it grows at exactly the
+        // byte rate of speech while recording nothing at all. Signal wins the
+        // chip, because a stalled track is obvious from the flat bars and a
+        // silent one looks identical to a quiet moment.
+        const isSilent = track.signal === 'silent';
+        els.hist.classList.toggle('stalled', isSilent || track.health === 'ended');
+        if (isSilent) {
+          els.health.innerHTML = '<span class="chip bad">no audio</span>';
+        } else if (track.health === 'ended') {
+          els.health.innerHTML = '<span class="chip bad">stalled</span>';
+        } else if (track.health === 'unknown') {
+          els.health.innerHTML = '<span class="chip warn">…</span>';
+        } else {
+          els.health.innerHTML = '';
+        }
+      }
+    }
+
+    function renderMarkers(markers) {
+      const list = document.getElementById('marker-list');
+      if (!markers.length) {
+        list.innerHTML = '<div class="empty">Flag a moment and the summary will call it out.</div>';
+        return;
+      }
+      list.innerHTML = markers.slice(-6).map((m) => `
+        <div class="marker-row">
+          <time>${esc(m.offset)}</time>
+          <span>${esc(m.label)}</span>
+        </div>`).join('');
+    }
+
+    /** Ask main to fit the window to the rendered content.
+     *  No margin allowance any more: the shell used to sit 8px inside a larger
+     *  transparent window to make room for its own shadow, and that 16px is
+     *  gone now that macOS draws the shadow around the window itself. Leaving
+     *  it in would show as a growing strip of bare blur under the footer. */
+    function syncHeight() {
+      // #pop now fills the window (so .body can scroll inside it), which means
+      // measuring it would only report back the height main last set — a panel
+      // frozen at its first size. Measure the CONTENT: the two chrome bars,
+      // the stack, and the body's own padding.
+      const body = document.getElementById('body');
+      const pad = parseFloat(getComputedStyle(body).paddingTop)
+        + parseFloat(getComputedStyle(body).paddingBottom);
+      const height = Math.ceil(
+        document.querySelector('.head').getBoundingClientRect().height
+        + document.getElementById('body-inner').getBoundingClientRect().height
+        + pad
+        + document.querySelector('.foot').getBoundingClientRect().height
+      );
+      if (height !== syncHeight.last) {
+        syncHeight.last = height;
+        api.resize(height);
+      }
+    }
+
+    function render(state) {
+      lastState = state;
+      const recording = !!(state.recording && state.recording.active);
+
+      document.getElementById('view-idle').classList.toggle('hidden', recording);
+      document.getElementById('view-rec').classList.toggle('hidden', !recording);
+
+      const stateDot = document.querySelector('#head-state .dot');
+      const stateText = document.getElementById('head-state-text');
+      if (recording) {
+        stateDot.className = 'dot rec';
+        stateText.textContent = 'Recording';
+        renderRecording(state);
+      } else {
+        const blocked = state.deps && state.deps.systemAudio === false;
+        stateDot.className = 'dot ' + (blocked ? 'bad' : 'ok');
+        stateText.textContent = blocked ? 'Not ready' : (state.mode === 'dual' ? 'Ready' : 'Ready · system only');
+        renderIdle(state);
+      }
+
+      syncHeight();
+    }
+
+    /* ── actions ── */
+
+    async function refresh() {
+      const state = await api.getState();
+      if (state) render(state);
+    }
+
+    document.getElementById('btn-start').addEventListener('click', () => api.startRecording());
+    document.getElementById('btn-stop').addEventListener('click', () => api.stopRecording());
+
+    document.getElementById('btn-record-next').addEventListener('click', (e) => {
+      api.recordUpcoming(e.currentTarget.dataset.fingerprint || '');
+    });
+
+    document.getElementById('later-list').addEventListener('click', (e) => {
+      const row = e.target.closest('[data-fingerprint]');
+      if (row) api.recordUpcoming(row.dataset.fingerprint);
+    });
+
+    document.getElementById('notes-list').addEventListener('click', (e) => {
+      // Retry sits INSIDE the open-the-note row, so it must claim the click
+      // first or retrying would also open the broken note.
+      const retry = e.target.closest('[data-resummarise]');
+      if (retry) {
+        e.stopPropagation();
+        retry.disabled = true;
+        retry.textContent = '…';
+        api.resummarise(retry.dataset.resummarise);
+        return;
+      }
+
+      const row = e.target.closest('[data-open]');
+      if (row) api.openPath(row.dataset.open);
+    });
+
+    /* ── note context menu ───────────────────────────────────────────────
+       Main owns WHAT is in the menu (only it can see the filesystem); this
+       owns where it lands, how it looks, and how the keyboard moves through
+       it. The last two are the bill for leaving NSMenu behind. */
+    const noteMenu = document.getElementById('note-menu');
+    let menuContext = null;   // { sessionDir, notePath } the menu was opened for
+    // Whether the Option key is down. Finder swaps "Copy" for "Copy as
+    // Pathname" while it is held, and this menu does the same with its Reveal
+    // items. Seeded from the right-click's own modifier state on every open,
+    // so a keyup missed while another window had focus can never stick.
+    let optionHeld = false;
+
+    /** Gap kept between the menu and the popover's edges. */
+    const MENU_MARGIN = 6;
+
+    function closeNoteMenu() {
+      if (!menuContext) return;
+      menuContext = null;
+      noteMenu.classList.add('hidden');
+      noteMenu.innerHTML = '';
+      noteMenu.style.minWidth = '';
+    }
+
+    function renderMenuItems(items) {
+      noteMenu.innerHTML = '';
+      for (const item of items) {
+        if (item.type === 'separator') {
+          const sep = document.createElement('div');
+          sep.className = 'sep';
+          noteMenu.appendChild(sep);
+          continue;
+        }
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.textContent = item.label;
+        btn.dataset.action = item.id;
+        btn.disabled = !item.enabled;
+        btn.setAttribute('role', 'menuitem');
+        if (item.danger) btn.classList.add('danger-item');
+        if (item.alt) {
+          // Both variants come from main; the renderer only chooses which of
+          // the two to show (invariant #15). Kept on the element so the swap
+          // is in place — re-rendering would drop the keyboard highlight.
+          btn.dataset.label = item.label;
+          btn.dataset.primaryAction = item.id;
+          btn.dataset.altAction = item.alt.id;
+          btn.dataset.altLabel = item.alt.label;
+        }
+        noteMenu.appendChild(btn);
+      }
+      applyMenuVariant();
+    }
+
+    /** Show each item's Option-key variant, or its normal form, in place. */
+    function applyMenuVariant() {
+      for (const btn of noteMenu.querySelectorAll('button[data-alt-action]')) {
+        btn.textContent = optionHeld ? btn.dataset.altLabel : btn.dataset.label;
+        // The click handler reads data-action, so swapping it here is what
+        // makes the click land on the variant that is actually being shown.
+        btn.dataset.action = optionHeld ? btn.dataset.altAction : btn.dataset.primaryAction;
+      }
+    }
+
+    function setOptionHeld(held) {
+      if (held === optionHeld) return;
+      optionHeld = held;
+      if (menuContext) applyMenuVariant();
+    }
+
+    async function openNoteMenu(row, x, y) {
+      const context = {
+        sessionDir: row.dataset.session || '',
+        notePath: row.dataset.open || ''
+      };
+      const result = await api.noteMenu(context);
+      if (!result || !result.success || !Array.isArray(result.items)) return;
+
+      menuContext = context;
+      renderMenuItems(result.items);
+
+      // Measure before placing: the menu cannot escape the window the way a
+      // native one could, so it is flipped up when it would overflow the
+      // bottom and clamped on both axes rather than being allowed to run off.
+      noteMenu.classList.remove('hidden');
+      noteMenu.style.left = '0px';
+      noteMenu.style.top = '0px';
+      // Size for the WIDER of the two variants, so holding Option neither
+      // jiggles the menu nor pushes it past the edge it was clamped against.
+      noteMenu.style.minWidth = `${Math.ceil(widestVariantWidth())}px`;
+      const box = noteMenu.getBoundingClientRect();
+      const maxLeft = window.innerWidth - box.width - MENU_MARGIN;
+      const maxTop = window.innerHeight - box.height - MENU_MARGIN;
+
+      const left = Math.max(MENU_MARGIN, Math.min(x, maxLeft));
+      // Flipping up from the cursor is what a real menu does when it is near
+      // the bottom; clamping alone would leave it covering the click.
+      const flipped = y + box.height + MENU_MARGIN > window.innerHeight;
+      const top = Math.max(MENU_MARGIN, Math.min(flipped ? y - box.height : y, maxTop));
+
+      noteMenu.style.left = `${Math.round(left)}px`;
+      noteMenu.style.top = `${Math.round(top)}px`;
+
+      // Focus the CONTAINER, not the first item. A macOS menu opens with
+      // nothing selected and highlights only once you move, so focusing an
+      // item would leave "Open Note" looking pre-chosen to every mouse user.
+      // The container still has to take focus or the arrow keys below never
+      // receive a keydown.
+      noteMenu.focus();
+    }
+
+    /** Width of the menu across both variants, measured with the other shown. */
+    function widestVariantWidth() {
+      const shown = noteMenu.getBoundingClientRect().width;
+      optionHeld = !optionHeld;
+      applyMenuVariant();
+      const other = noteMenu.getBoundingClientRect().width;
+      optionHeld = !optionHeld;
+      applyMenuVariant();
+      return Math.max(shown, other);
+    }
+
+    function menuItems() {
+      return [...noteMenu.querySelectorAll('button:enabled')];
+    }
+
+    /** Move the highlight, wrapping at both ends the way a menu does. */
+    function moveMenuFocus(step) {
+      const items = menuItems();
+      if (!items.length) return;
+      const at = items.indexOf(document.activeElement);
+      const next = at === -1
+        ? (step > 0 ? 0 : items.length - 1)
+        : (at + step + items.length) % items.length;
+      items[next].focus();
+    }
+
+    document.getElementById('notes-list').addEventListener('contextmenu', (e) => {
+      const row = e.target.closest('[data-open]');
+      if (!row) return;
+      e.preventDefault();
+      // Seed from the click itself, synchronously: an Option-right-click
+      // opens straight into the Copy variants, and a release during the
+      // round trip to main still reaches the keyup listener below.
+      optionHeld = e.altKey;
+      openNoteMenu(row, e.clientX, e.clientY);
+    });
+
+    // Live swap while the menu is open, the way Finder's does. mousemove
+    // carries the modifier too, which corrects a keyup that never arrived.
+    document.addEventListener('keydown', (e) => { if (e.key === 'Alt') setOptionHeld(true); });
+    document.addEventListener('keyup', (e) => { if (e.key === 'Alt') setOptionHeld(false); });
+    noteMenu.addEventListener('mousemove', (e) => setOptionHeld(e.altKey));
+
+    noteMenu.addEventListener('click', (e) => {
+      const btn = e.target.closest('button[data-action]');
+      if (!btn || btn.disabled || !menuContext) return;
+      const payload = { action: btn.dataset.action, ...menuContext };
+      closeNoteMenu();
+      api.noteAction(payload);
+    });
+
+    noteMenu.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowDown') { e.preventDefault(); moveMenuFocus(1); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); moveMenuFocus(-1); }
+      else if (e.key === 'Home') { e.preventDefault(); moveMenuFocus(1e9); }
+      else if (e.key === 'Escape') { e.preventDefault(); closeNoteMenu(); }
+      else if (e.key === 'Enter' || e.key === ' ') {
+        // Activate explicitly. A button's own Enter activation rides on the
+        // keypress event, and Chromium sends no keypress while Option is
+        // down — so without this, Return on a highlighted "Copy Note Path"
+        // does nothing. preventDefault also stops the plain case firing twice.
+        const btn = document.activeElement && document.activeElement.closest('#note-menu button[data-action]');
+        if (btn) { e.preventDefault(); btn.click(); }
+      }
+    });
+
+    // Dismissal. `mousedown` rather than `click` so the menu is gone before the
+    // row underneath can treat the same gesture as "open this note".
+    document.addEventListener('mousedown', (e) => {
+      if (menuContext && !noteMenu.contains(e.target)) closeNoteMenu();
+    }, true);
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') closeNoteMenu();
+    });
+    window.addEventListener('blur', closeNoteMenu);
+    document.addEventListener('scroll', closeNoteMenu, true);
+
+    function submitMarker() {
+      const input = document.getElementById('marker-input');
+      const label = input.value.trim();
+      input.value = '';
+      api.addMarker(label).then((result) => {
+        if (result && result.markers) {
+          renderMarkers(result.markers);
+          syncHeight();
+        }
+      });
+      input.focus();
+    }
+
+    document.getElementById('btn-marker').addEventListener('click', submitMarker);
+    document.getElementById('marker-input').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); submitMarker(); }
+      if (e.key === 'Escape') { e.preventDefault(); api.close(); }
+    });
+
+    document.getElementById('btn-recordings').addEventListener('click', () => api.openPath('recordings'));
+    document.getElementById('btn-vault').addEventListener('click', () => api.openPath('vault'));
+    document.getElementById('btn-settings').addEventListener('click', () => api.openSettings());
+    document.getElementById('btn-quit').addEventListener('click', () => api.quit());
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') api.close();
+    });
+
+    // Pushed updates (levels, timer, markers) while the panel is open.
+    api.onState((state) => render(state));
+
+    refresh();
+  </script>
+</body>
+</html>
