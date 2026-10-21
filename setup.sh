@@ -236,7 +236,7 @@ echo "     refuses to start rather than saving a silent track."
 echo "  2. Install ONE summarisation CLI (pick per Settings > Notes & filing):"
 echo "       Codex:  npm install -g @openai/codex          (OpenAI subscription)"
 echo "       Claude: npm install -g @anthropic-ai/claude-code  (Anthropic subscription)"
-echo "       Ollama: brew install ollama && ollama pull llama3.2  (free, fully local)"
+echo "       Ollama: brew install ollama && ollama pull qwen3.5:4b  (free, fully local)"
 echo "  3. Start it with: npm start"
 echo "  4. The icon appears in the menu bar - click it to record"
 blank

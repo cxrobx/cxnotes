@@ -354,12 +354,17 @@ const PROVIDER_SPECS = {
    * `ollama run <model>` reads the prompt from stdin and writes the reply to
    * stdout. If the model has not been pulled it will pull it on first use,
    * which can take minutes — that is why the shared timeout is generous.
-   * Progress/spinner output goes to stderr, so stdout stays clean.
+   * The spinner's cursor codes still reach stdout, which `stripAnsi` removes.
+   *
+   * `--think=false`: qwen3.5 otherwise writes its reasoning into stdout ahead of
+   * the notes. `--nowordwrap`: without it the reply is hard-wrapped at the
+   * terminal width even into a pipe, with characters repeated at each break.
+   * A model without thinking (llama3.2) accepts both. Measured 2026-10-21.
    */
   ollama(model) {
     return {
       bin: 'ollama',
-      args: ['run', model],
+      args: ['run', model, '--think=false', '--nowordwrap'],
       // Local daemon; it needs the real env to find OLLAMA_HOST if set.
       env: { ...process.env },
       cwd: os.homedir(),
@@ -469,7 +474,8 @@ async function runProvider(id, prompt, model) {
  * Strip ANSI escape codes from text
  */
 function stripAnsi(text) {
-  return text.replace(/\x1b\[[0-9;]*m/g, '');
+  // Every CSI sequence, not just colours: Ollama's spinner writes cursor codes.
+  return text.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '');
 }
 
 /**

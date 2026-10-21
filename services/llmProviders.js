@@ -46,8 +46,8 @@ const PROVIDERS = Object.freeze({
     label: 'Ollama',
     bin: 'ollama',
     kind: 'local',
-    defaultModel: 'llama3.2',
-    install: 'brew install ollama && ollama pull llama3.2',
+    defaultModel: 'qwen3.5:4b',
+    install: 'brew install ollama && ollama pull qwen3.5:4b',
   }),
 });
 

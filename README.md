@@ -82,7 +82,7 @@ Then install **one** summariser:
 ```bash
 npm install -g @openai/codex               # OpenAI subscription
 npm install -g @anthropic-ai/claude-code   # Anthropic subscription
-brew install ollama && ollama pull llama3.2  # free, never leaves the machine
+brew install ollama && ollama pull qwen3.5:4b  # free, never leaves the machine
 ```
 
 ### The BlackHole step, if you need it
