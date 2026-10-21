@@ -89,6 +89,8 @@ brew install ollama && ollama pull qwen3.5:4b  # free, never leaves the machine
 
 ScreenCaptureKit handles system audio on its own and needs no routing. BlackHole
 is only the fallback, and installing it is not enough by itself — system output
+On a machine short on memory, `llama3.2:3b` (about 2.6 GB against about 4 GB) also works as the Ollama model. It is faster but weaker: in testing it mixed up which speaker made which commitment.
+
 has to be *routed through* it:
 
 1. Open **Audio MIDI Setup**
