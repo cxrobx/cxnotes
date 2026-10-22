@@ -393,6 +393,34 @@ function findUv() {
   return null;
 }
 
+/**
+ * Locate an installed `parakeet-mlx` (`uv tool install parakeet-mlx`). It lives
+ * outside uv's cache, so clearing that cache can't turn the next recording into
+ * a fresh download of Parakeet's dependencies the way `uvx parakeet-mlx` does.
+ */
+function findParakeet() {
+  const candidates = [
+    path.join(process.env.HOME || '', '.local/bin/parakeet-mlx'),
+    '/opt/homebrew/bin/parakeet-mlx',
+    '/usr/local/bin/parakeet-mlx',
+  ];
+  for (const c of candidates) {
+    if (c && fs.existsSync(c)) return c;
+  }
+  return null;
+}
+
+/**
+ * The command that runs parakeet-mlx: the installed tool when there is one,
+ * else `uvx parakeet-mlx`. Null when neither is available.
+ * @returns {{cmd: string, prefix: string[]} | null}
+ */
+function parakeetCommand(installed = findParakeet(), uvx = findUv()) {
+  if (installed) return { cmd: installed, prefix: [] };
+  if (uvx) return { cmd: uvx, prefix: ['parakeet-mlx'] };
+  return null;
+}
+
 /** Same model setup.sh / setup-packaged.sh pre-pull. */
 const PARAKEET_MODEL = 'mlx-community/parakeet-tdt-0.6b-v3';
 
@@ -404,8 +432,8 @@ const PARAKEET_MODEL = 'mlx-community/parakeet-tdt-0.6b-v3';
  * @returns {Promise<string>} Path to the generated .txt transcript
  */
 function transcribeWithParakeet(wavPath, prefix, outputCsv, progressCallback) {
-  const uvx = findUv();
-  if (!uvx) return Promise.reject(new Error('uv/uvx not found'));
+  const runner = parakeetCommand();
+  if (!runner) return Promise.reject(new Error('parakeet-mlx and uv/uvx not found'));
 
   return new Promise((resolve, reject) => {
     const outDir = path.dirname(prefix);
@@ -420,8 +448,8 @@ function transcribeWithParakeet(wavPath, prefix, outputCsv, progressCallback) {
     // Pin the model: `uvx` resolves the newest parakeet-mlx, so relying on
     // the CLI's default would let an upstream release silently swap it.
     const model = process.env.PARAKEET_MODEL || PARAKEET_MODEL;
-    const args = ['parakeet-mlx', wavPath, '--model', model, '--output-format', 'json', '--output-dir', outDir];
-    const proc = spawn(uvx, args, { env: process.env });
+    const args = [...runner.prefix, wavPath, '--model', model, '--output-format', 'json', '--output-dir', outDir];
+    const proc = spawn(runner.cmd, args, { env: process.env });
     let settled = false;
     let stderr = '';
 
@@ -438,7 +466,7 @@ function transcribeWithParakeet(wavPath, prefix, outputCsv, progressCallback) {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      reject(new Error(`Failed to start uvx parakeet-mlx: ${err.message}`));
+      reject(new Error(`Failed to start parakeet-mlx (${runner.cmd}): ${err.message}`));
     });
     proc.on('close', (code) => {
       if (settled) return;
@@ -779,6 +807,8 @@ module.exports = {
   parseWhisperProgress,
   transcribeSession,
   findUv,
+  findParakeet,
+  parakeetCommand,
   findWhisperBinary,
   findWhisperModel,
   verifyInstallation
