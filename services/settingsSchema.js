@@ -105,6 +105,7 @@ function buildSettingCoercers(providerIds) {
     calendarSuggestionsEnabled: anyValue,
 
     // Validated: a bad value must leave the stored one untouched.
+    launchAtStartup: booleanOnly,
     calendarAutoTemplateEnabled: booleanOnly,
     silenceAutoStopEnabled: booleanOnly,
     vaultAutoFilingEnabled: booleanOnly,

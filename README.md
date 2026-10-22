@@ -35,6 +35,10 @@ structured notes. The result is filed into the right folder of your vault.
 
 ### Beyond the basic loop
 
+- **Launch on startup.** The installed app opens in the menu bar when you sign
+  in after a restart. Enabled by default; turn it off in **Settings → General**
+  and click **Save Changes**. If macOS asks for approval, allow CXNotes in
+  **System Settings → General → Login Items**.
 - **Calendar-aware.** Reads upcoming meetings from CXMail's store or macOS
   EventKit, offers a one-click record with the title, attendees and agenda
   already filled in, and lists what is coming up in the tray menu.
@@ -85,12 +89,12 @@ npm install -g @anthropic-ai/claude-code   # Anthropic subscription
 brew install ollama && ollama pull qwen3.5:4b  # free, never leaves the machine
 ```
 
+On a machine short on memory, `llama3.2:3b` (about 2.6 GB against about 4 GB) also works as the Ollama model. It is faster but weaker: in testing it mixed up which speaker made which commitment.
+
 ### The BlackHole step, if you need it
 
 ScreenCaptureKit handles system audio on its own and needs no routing. BlackHole
 is only the fallback, and installing it is not enough by itself — system output
-On a machine short on memory, `llama3.2:3b` (about 2.6 GB against about 4 GB) also works as the Ollama model. It is faster but weaker: in testing it mixed up which speaker made which commitment.
-
 has to be *routed through* it:
 
 1. Open **Audio MIDI Setup**

@@ -45,6 +45,10 @@
           <svg class="nav-ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18z"/></svg>
           <span>Appearance</span>
         </button>
+        <button class="nav-item" data-pane="pane-general" type="button">
+          <svg class="nav-ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+          <span>General</span>
+        </button>
       </nav>
 
       <div class="privacy-card">
@@ -491,6 +495,27 @@
             </div>
 
             <button class="btn btn-secondary" id="btn-open-output">Open Output Folder</button>
+          </section>
+        </div>
+
+        <div class="pane" id="pane-general">
+          <div class="pane-head">
+            <h1>General</h1>
+            <p>How CXNotes starts on your Mac.</p>
+          </div>
+
+          <section class="section">
+            <h2>Startup</h2>
+            <div class="form-group">
+              <label class="checkbox-label">
+                <input type="checkbox" id="launch-at-startup" aria-describedby="launch-at-startup-status">
+                <span>
+                  Launch on startup
+                  <small>Automatically open CXNotes in the menu bar when you sign in after restarting your Mac. Enabled by default; Save Changes keeps your choice.</small>
+                </span>
+              </label>
+              <p id="launch-at-startup-status" class="field-note" role="status"></p>
+            </div>
           </section>
         </div>
 

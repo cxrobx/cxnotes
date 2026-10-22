@@ -12,6 +12,7 @@ All notable changes to CXNotes will be documented in this file.
 - 2026-09-25: **The silence trim no longer moves the start of a track.** `trimSilence` cut leading *and* trailing silence and recorded one total, so a trimmed track lost its clock (the 09-25 mic track: 43.4 s off the head, 59.5 s off the tail, recorded as 102.9 s). It now trims the tail only and records `edge: 'trailing'`.
 
 ### Added
+- 2026-10-01: **Launch on startup**, enabled by default for the installed macOS app. CXNotes registers as a native login item and opens in the menu bar after sign-in. Settings → General offers an on/off switch, reports pending macOS approval, and reflects changes made in System Settings. Development builds never register Electron itself.
 - 2026-09-25: **A durable log file** at `~/Library/Logs/CXNotes/cxnotes.log` (5 MB, three rotations): every main-process console line, timestamped, plus a named trigger for every recording start (`manual`, `meeting-banner-confirm`, `calendar-upcoming`) and a named reason for every stop (`tray-menu`, `menubar-panel`, `settings-window`, `silence-auto-stop`, `silence-prompt-stop-now`, `capture-check-dialog`, `app-quit`), the silence prompt and its answer, and every user deletion. Whisper's stdout echo (transcript text) is kept out of the file.
 
 ### Fixed (earlier)

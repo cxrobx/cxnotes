@@ -47,6 +47,7 @@ cxnotes/
 │   ├── dependencies.js        # Pure: dependency reasoning; probing stays in main.js
 │   ├── recordingsList.js      # Pure: recordings list + storage summary for the UI
 │   ├── settingsSchema.js      # Pure: the settings:update accepted surface, as data
+│   ├── startupLaunch.js       # Native login-item registration (injected Electron app/store)
 │   ├── meetingDetector.js     # App-based meeting detection (Zoom/FaceTime/Meet)
 │   ├── calendarSuggester.js   # 60s poll, filter rules, fire pre-meeting banners
 │   ├── dismissalRegistry.js   # Shared dismiss-state owner (consulted by both)
@@ -219,6 +220,17 @@ Qualification: A rule belongs here if (1) violating it breaks the system in non-
    - Pattern: `native/call-audio-tap/` (`CallTap`, `CallWatcher`, `WavWriter`); `services/callCapture.js` (`planCallMix`, `mixCallAudio`, `effectiveSampleRate`, `CallCaptureSession`); `services/recorder.js` → `_finishCallAudio()`; `main.js` → `createCallCapture()`, `requestCallAudioAccess()`. Tested in `services/callCapture.test.js` and the call-audio tests at the end of `services/recorder.test.js`.
 
 ## Key Patterns
+
+### Launch on Startup
+
+`StartupLaunch` registers the packaged macOS app through Electron's login-item
+API once, using `launchAtStartup: true` from the defaults in `main.js`.
+`launchAtStartupInitialised` records that the default has been applied; later
+launches read the OS state rather than re-enabling an item disabled in System
+Settings. Development builds never register Electron itself. Settings → General
+saves only an edited startup toggle, verifies the native result before storing
+it, and displays any pending macOS approval. Reset restores the enabled default.
+Neither saving nor resetting reinitialises an active recorder.
 
 ### IPC Communication
 - Main ↔ Renderer communication via `ipcMain.handle()` / `ipcRenderer.invoke()`

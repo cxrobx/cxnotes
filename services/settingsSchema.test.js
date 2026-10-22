@@ -55,7 +55,7 @@ test('one bad key does not discard the good keys beside it', () => {
 test('boolean settings accept only real booleans', () => {
   for (const key of [
     'calendarAutoTemplateEnabled', 'silenceAutoStopEnabled',
-    'vaultAutoFilingEnabled', 'llmProviderStrict'
+    'vaultAutoFilingEnabled', 'llmProviderStrict', 'launchAtStartup'
   ]) {
     assert.deepStrictEqual(coerce({ [key]: true }).accepted, { [key]: true }, key);
     assert.deepStrictEqual(coerce({ [key]: false }).accepted, { [key]: false }, key);
@@ -194,7 +194,7 @@ test('a vault directory is stored expanded and resolved', () => {
 
 test('the accepted key set has not drifted', () => {
   const everyKey = {
-    outputDirectory: '/tmp', retentionDays: 7, autoProcess: true, recordingMode: 'dual',
+    outputDirectory: '/tmp', retentionDays: 7, autoProcess: true, recordingMode: 'dual', launchAtStartup: true,
     micDevice: 'Mic', systemLabel: 'Remote', micLabel: 'Me', meetingContext: {},
     meetingDetectionEnabled: true, calendarSuggestionsEnabled: true,
     calendarAutoTemplateEnabled: true, silenceAutoStopEnabled: true,
@@ -210,5 +210,5 @@ test('the accepted key set has not drifted', () => {
 
   assert.deepStrictEqual(rejected, [], 'every key above should be valid');
   assert.deepStrictEqual(unknown, [], 'every key above should be known');
-  assert.strictEqual(Object.keys(accepted).length, 26);
+  assert.strictEqual(Object.keys(accepted).length, 27);
 });

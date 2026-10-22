@@ -199,6 +199,7 @@ async function loadSettings() {
     document.getElementById('output-directory').value = currentSettings.outputDirectory;
     document.getElementById('retention-days').value = currentSettings.retentionDays;
     document.getElementById('auto-process').checked = currentSettings.autoProcess;
+    renderStartupLaunch(currentSettings);
     document.getElementById('meeting-detection-enabled').checked =
       currentSettings.meetingDetectionEnabled !== false;
 
@@ -908,6 +909,24 @@ function setupKeyboardShortcuts() {
   });
 }
 
+function renderStartupLaunch(settings) {
+  const toggle = document.getElementById('launch-at-startup');
+  const status = document.getElementById('launch-at-startup-status');
+  toggle.checked = settings.launchAtStartup === true;
+  toggle.disabled = settings.launchAtStartupAvailable !== true;
+  if (settings.launchAtStartupError) {
+    status.textContent = settings.launchAtStartupError;
+  } else if (settings.launchAtStartupStatus === 'requires-approval') {
+    status.textContent = 'Approval needed: allow CXNotes in System Settings > General > Login Items to finish enabling startup.';
+  } else if (settings.launchAtStartupStatus === 'not-found') {
+    status.textContent = 'macOS could not find CXNotes. Move the app to Applications, then enable launch on startup again.';
+  } else {
+    status.textContent = settings.launchAtStartup
+      ? 'CXNotes will be ready in the menu bar when you sign in.'
+      : 'CXNotes will start when you open it yourself.';
+  }
+}
+
 async function handleSaveSettings() {
   try {
     const activeMode = document.getElementById('mode-dual').classList.contains('active') ? 'dual' : 'system';
@@ -986,6 +1005,13 @@ async function handleSaveSettings() {
       vaultDirectory: (document.getElementById('vault-directory') || {}).value || ''
     };
 
+    const startupToggle = document.getElementById('launch-at-startup');
+    // Development builds cannot register CXNotes as a login item. Omit the
+    // disabled control so an ordinary settings save still works there.
+    if (!startupToggle.disabled && startupToggle.checked !== currentSettings.launchAtStartup) {
+      newSettings.launchAtStartup = startupToggle.checked;
+    }
+
     const result = await api.updateSettings(newSettings);
 
     if (result.success) {
@@ -993,8 +1019,19 @@ async function handleSaveSettings() {
       // replace would drop read-only fields main ships alongside it (the
       // provider availability list, the vault status) and the next re-render
       // would have nothing to describe.
-      currentSettings = { ...currentSettings, ...newSettings };
-      showSuccess('Settings saved');
+      currentSettings = {
+        ...currentSettings, ...newSettings,
+        launchAtStartup: result.launchAtStartup,
+        launchAtStartupAvailable: result.launchAtStartupAvailable,
+        launchAtStartupStatus: result.launchAtStartupStatus,
+        launchAtStartupError: result.launchAtStartupError
+      };
+      renderStartupLaunch(currentSettings);
+      if (result.launchAtStartupStatus === 'requires-approval') {
+        showInfo('Settings saved. Allow CXNotes in System Settings > General > Login Items to enable startup.');
+      } else {
+        showSuccess('Settings saved');
+      }
     } else {
       showError('Could not save your settings: ' + result.error);
     }
@@ -1318,4 +1355,3 @@ function showWarning(message) {
 function showInfo(message) {
   showToast(message, 'info');
 }
-

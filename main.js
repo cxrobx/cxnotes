@@ -60,6 +60,7 @@ const {
   EMPTY_STORAGE_SUMMARY
 } = require('./services/recordingsList');
 const { coerceSettings, clampSilenceMinutes } = require('./services/settingsSchema');
+const { StartupLaunch } = require('./services/startupLaunch');
 const { ProcessRegistry } = require('./services/processRegistry');
 const { listInputDevices, findDefaultMicrophone, verifyInputDevice, checkSckAvailable } = require('./utils/audioDevices');
 const { resolveBinaryCached, clearBinaryCache } = require('./utils/binaries');
@@ -105,8 +106,10 @@ const {
 const LEGACY_VAULT_DIRECTORY = path.join(app.getPath('documents'), 'CX');
 
 // Persistent config store
+const LAUNCH_AT_STARTUP_DEFAULT = true;
 const store = new Store({
   defaults: {
+    launchAtStartup: LAUNCH_AT_STARTUP_DEFAULT,
     outputDirectory: path.join(app.getPath('documents'), 'CXNotesRecordings'),
     retentionDays: 7,
     autoProcess: true,
@@ -171,6 +174,8 @@ const store = new Store({
     windowTransparency: TRANSPARENCY_DEFAULT
   }
 });
+
+const startupLaunch = new StartupLaunch({ app, store });
 
 // The vault profile is read once at start-up; the pure filing and naming
 // modules take it from services/vaultProfile.js, never from a literal.
@@ -4494,6 +4499,7 @@ ipcMain.handle('process:full', async (event, wavPathOrSessionDir) => {
 // Settings
 ipcMain.handle('settings:get', async () => {
   return {
+    ...startupLaunch.getSettings(),
     outputDirectory: store.get('outputDirectory'),
     retentionDays: store.get('retentionDays'),
     autoProcess: store.get('autoProcess'),
@@ -4559,6 +4565,9 @@ ipcMain.handle('settings:update', async (event, settings) => {
     // What may be written, and what each value becomes, is declared in
     // services/settingsSchema.js. A rejected value leaves the stored one alone.
     const { accepted, rejected, unknown } = coerceSettings(settings, LLM_PROVIDER_IDS);
+    // Verify registration before saving any of the patch, so an OS failure
+    // cannot leave a stored switch claiming startup has been enabled.
+    if ('launchAtStartup' in accepted) startupLaunch.setEnabled(accepted.launchAtStartup);
     for (const [key, value] of Object.entries(accepted)) store.set(key, value);
     if (rejected.length) console.warn(`settings:update ignored invalid: ${rejected.join(', ')}`);
     if (unknown.length) console.warn(`settings:update ignored unknown: ${unknown.join(', ')}`);
@@ -4624,7 +4633,7 @@ ipcMain.handle('settings:update', async (event, settings) => {
       console.log('settings:update — skipping initRecorder() while a recording is active');
     }
 
-    return ipcOk();
+    return { ...ipcOk(), ...startupLaunch.getSettings() };
   } catch (err) {
     console.error('IPC settings:update failed:', err);
     return ipcFail(err);
@@ -4633,8 +4642,10 @@ ipcMain.handle('settings:update', async (event, settings) => {
 
 ipcMain.handle('settings:reset', async () => {
   try {
+    if (startupLaunch.available) startupLaunch.setEnabled(LAUNCH_AT_STARTUP_DEFAULT);
     store.clear();
-    initRecorder();
+    startupLaunch.initialise();
+    if (!isRecordingActive()) initRecorder();
     return ipcOk();
   } catch (err) {
     console.error('IPC settings:reset failed:', err);
@@ -4793,6 +4804,14 @@ app.whenReady().then(() => {
   // Hide dock icon — menu bar only app
   if (process.platform === 'darwin' && app.dock) {
     app.dock.hide();
+  }
+
+  try {
+    const startup = startupLaunch.initialise();
+    console.log(`Launch on startup: ${startup.launchAtStartupStatus}`);
+  } catch (err) {
+    // Startup registration must never prevent the menu-bar app from running.
+    console.error('Could not configure launch on startup:', err.message);
   }
 
   // Initialize recorder and tray
