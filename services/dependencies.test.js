@@ -7,6 +7,7 @@ const {
   resolveSystemAudio,
   resolveMicrophone,
   resolveTranscription,
+  resolveSummariser,
   summariseToConsole,
   describeDependencyStatus,
   resolveSetupCommand,
@@ -276,4 +277,23 @@ test('the fallback message tells the user exactly what to run by hand', () => {
 
   assert.match(m, /Failed to open Terminal/);
   assert.match(m, /bash "\/Applications\/CXNotes\.app\/Contents\/Resources\/setup-packaged\.sh"/);
+});
+
+/* ── summariser: every registered provider counts ────────────── */
+
+test('resolveSummariser counts an Ollama-only machine as ready', () => {
+  const r = resolveSummariser({ codex: false, claude: false, ollama: true });
+  assert.deepEqual(r, { ok: true, provider: 'ollama', label: 'Ollama' });
+});
+
+test('resolveSummariser prefers the auto order and reports none when empty', () => {
+  assert.strictEqual(resolveSummariser({ codex: true, claude: true, ollama: true }).provider, 'codex');
+  assert.strictEqual(resolveSummariser({ claude: true, ollama: true }).provider, 'claude');
+  assert.deepEqual(resolveSummariser({}), { ok: false, provider: null, label: null });
+});
+
+test('main.js never judges summarisation by Codex/Claude alone', () => {
+  const src = require('node:fs').readFileSync(require('node:path').join(__dirname, '..', 'main.js'), 'utf8');
+  assert.doesNotMatch(src, /isCodexAvailable\(\)\s*\|\|\s*isClaudeAvailable\(\)|codexOk \|\| claudeOk/);
+  assert.match(src, /resolveSummariser\(providerAvailability\(\)\)/);
 });

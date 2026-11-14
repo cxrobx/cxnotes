@@ -38,7 +38,7 @@ const { SignalWatcher, DEFAULT_ESCALATION_MS } = require('./services/signalWatch
 const { verifyCapture, PROBE_AMPLITUDE_LIVE } = require('./services/probeRunner');
 const { prependSilentTrackWarning, prependOwnMicNotice } = require('./services/silentTrackNotice');
 const { transcribe, transcribeSession, findUv, verifyInstallation: verifyWhisper } = require('./services/transcriber');
-const { generateNotes, generateSessionNotes, exportNotesToObsidian, isCodexAvailable, isClaudeAvailable, providerAvailability, runLLM, detectProviderFailure, restampCategoryForDestination } = require('./services/summariser');
+const { generateNotes, generateSessionNotes, exportNotesToObsidian, providerAvailability, runLLM, detectProviderFailure, restampCategoryForDestination } = require('./services/summariser');
 const { PROVIDERS: LLM_PROVIDERS, PROVIDER_IDS: LLM_PROVIDER_IDS, normalisePreference } = require('./services/llmProviders');
 const { classifyNote, resolveCollision } = require('./services/noteFiler');
 const { setVaultProfile } = require('./services/vaultProfile');
@@ -48,6 +48,7 @@ const { buildNoteMenuItems, NOTE_MENU_ACTIONS } = require('./services/noteMenu')
 const {
   resolveSystemAudio,
   resolveMicrophone,
+  resolveSummariser,
   summariseToConsole,
   describeDependencyStatus,
   resolveSetupCommand,
@@ -826,13 +827,13 @@ function checkDependencies() {
   status.mic = mic.ok;
   console.log(mic.detail);
 
-  // Check AI summarisation (Codex or Claude CLI)
+  // Check AI summarisation — any provider in the registry counts, Ollama
+  // included (see resolveSummariser). `status.codex` keeps its old name because
+  // the settings UI and the dialog read it.
   console.log('\nChecking AI summarisation...');
-  const codexOk = isCodexAvailable();
-  const claudeOk = isClaudeAvailable();
-  status.codex = codexOk || claudeOk;
-  const provider = codexOk ? 'Codex' : claudeOk ? 'Claude' : 'none';
-  console.log(`AI summarisation: ${status.codex ? `available (${provider})` : 'not found'}`);
+  const summariser = resolveSummariser(providerAvailability());
+  status.codex = summariser.ok;
+  console.log(`AI summarisation: ${summariser.ok ? `available (${summariser.label})` : 'not found'}`);
 
   console.log(`\n${summariseToConsole(status)}\n`);
 
@@ -4277,17 +4278,14 @@ ipcMain.handle('audio:preflight', async () => {
     message: transcriptionMessage
   });
 
-  // Check AI summarisation (Codex or Claude CLI)
-  const preflightCodex = isCodexAvailable();
-  const preflightClaude = isClaudeAvailable();
-  const aiOk = preflightCodex || preflightClaude;
-  const aiProvider = preflightCodex ? 'Codex CLI' : 'Claude CLI';
+  // Check AI summarisation — any provider counts, Ollama included
+  const preflightSummariser = resolveSummariser(providerAvailability());
   checks.push({
     name: 'AI Summarisation',
-    pass: aiOk,
-    message: aiOk
-      ? `${aiProvider} available for note generation`
-      : 'No AI provider found. Install Codex CLI or Claude CLI'
+    pass: preflightSummariser.ok,
+    message: preflightSummariser.ok
+      ? `${preflightSummariser.label} available for note generation`
+      : `No AI provider found. Install one of:\n${providerInstallLines()}`
   });
 
   return checks;

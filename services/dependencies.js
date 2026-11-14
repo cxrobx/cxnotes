@@ -1,6 +1,7 @@
 'use strict';
 
 const path = require('node:path');
+const { PROVIDERS: LLM_PROVIDERS, AUTO_ORDER: LLM_AUTO_ORDER } = require('./llmProviders');
 
 /**
  * The judgement calls inside the dependency check, separated from the probing.
@@ -96,6 +97,20 @@ function resolveMicrophone({ mode, configuredDevice, deviceVerifies, defaultDevi
     required: true,
     detail: `Default mic: ${defaultDevice ? defaultDevice.name : 'none found'}`
   };
+}
+
+/**
+ * Whether any summariser is installed, judged across EVERY provider in the
+ * registry. The checks used to count only Codex and Claude, so a machine with
+ * just Ollama — a supported, local provider that summarises fine — was told
+ * "AI summarisation MISSING" by both the dependency dialog and the preflight.
+ *
+ * @param {object} available - { [providerId]: bool }, from providerAvailability()
+ * @returns {{ok: boolean, provider: string|null, label: string|null}}
+ */
+function resolveSummariser(available = {}) {
+  const id = LLM_AUTO_ORDER.find((p) => Boolean(available[p])) || null;
+  return { ok: Boolean(id), provider: id, label: id ? LLM_PROVIDERS[id].label : null };
 }
 
 /** The `OK` / `MISSING` block printed to the console after every check. */
@@ -224,6 +239,7 @@ function setupFallbackMessage(shellCommand) {
 
 module.exports = {
   DEPENDENCY_ROWS,
+  resolveSummariser,
   resolveSystemAudio,
   resolveMicrophone,
   resolveTranscription,
