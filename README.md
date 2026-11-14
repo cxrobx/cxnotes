@@ -25,7 +25,7 @@ structured notes. The result is filed into the right folder of your vault.
 
 ```
   ┌─ system audio ──► ScreenCaptureKit ──► system.wav ──┐
-  │                   (or BlackHole + sox)              │
+  │                                                     │
   │                                                     ├──► merged transcript ──► notes.md ──► vault
   └─ microphone ────► sox ─────────────────► mic.wav ───┘
                                              ▲
@@ -62,9 +62,12 @@ structured notes. The result is filed into the right folder of your vault.
 |---|---|
 | macOS | 13 Ventura or newer (ScreenCaptureKit) |
 | Node.js | 20+ (24+ to run the test suite) |
-| Homebrew | for sox and cmake |
-| BlackHole 2ch | only as a fallback if ScreenCaptureKit is unavailable |
+| Homebrew | for sox, uv and cmake |
+| sox | required: records the microphone and checks tracks for silence |
+| A transcriber | Parakeet via `uv` (default), or whisper.cpp (optional fallback) |
 | A summariser | one of `codex`, `claude`, or `ollama` |
+
+No BlackHole or other virtual audio driver: system audio is ScreenCaptureKit only.
 
 Apple Silicon is strongly preferred — transcription runs several times faster
 than real time on it.
@@ -78,8 +81,8 @@ npm start
 ```
 
 `setup.sh` is idempotent — re-running it after a partial or failed install is
-safe. It pauses if BlackHole is missing, because installing that driver also
-requires a manual Audio MIDI Setup step it cannot do for you.
+safe. The minimum to record and transcribe is sox plus `uv`; whisper.cpp is
+only the fallback transcriber, so a machine with `uv` does not need it.
 
 Then install **one** summariser:
 
@@ -90,21 +93,6 @@ brew install ollama && ollama pull qwen3.5:4b  # free, never leaves the machine
 ```
 
 On a machine short on memory, `llama3.2:3b` (about 2.6 GB against about 4 GB) also works as the Ollama model. It is faster but weaker: in testing it mixed up which speaker made which commitment.
-
-### The BlackHole step, if you need it
-
-ScreenCaptureKit handles system audio on its own and needs no routing. BlackHole
-is only the fallback, and installing it is not enough by itself — system output
-has to be *routed through* it:
-
-1. Open **Audio MIDI Setup**
-2. Create a **Multi-Output Device**
-3. Tick both your speakers and **BlackHole 2ch**
-4. Select that Multi-Output Device as your system output
-
-Skipping step 4 is the single most common reason a system track comes back
-silent: the driver is installed, so everything reports healthy, and nothing is
-being fed into it.
 
 ## Using it
 
