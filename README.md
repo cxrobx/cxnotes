@@ -3,6 +3,10 @@
 A macOS menu-bar app that records meetings, transcribes them locally, and writes
 speaker-aware notes into an Obsidian vault.
 
+![CXNotes recording dual tracks locally, transcribing, summarizing, and filing into Obsidian — app replica, seeded demo data](docs/media/cxnotes-demo.gif)
+
+<sub>App replica with seeded demo data. [Watch the full 40-second overview with sound](https://cxventures.io/products/cxnotes).</sub>
+
 Everything that touches audio happens on the machine. Recording is local,
 transcription is local, and the only text that leaves is whatever you send to a
 summarisation CLI you have already installed and logged into yourself.
